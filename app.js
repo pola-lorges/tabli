@@ -55,6 +55,10 @@ function loadUsers(){
   const saved = localStorage.getItem("tabli_users");
   if(saved) users = JSON.parse(saved);
 }
+function defaultMenu(){return MENU.map(item=>({...item}))}
+function normalizeProductName(name){
+  return name.normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim().replace(/\s+/g," ").toLowerCase();
+}
 
 function fcfa(n){return n.toLocaleString("fr-FR")+" FCFA"}
 function formatDateTime(ts){
@@ -131,17 +135,20 @@ let state={
   registerError:"",
   registerModalOpen:false,
   statsPeriod:"day",
-  statsDate:dateToInputValue()
+  statsDate:dateToInputValue(),
+  menu:defaultMenu(),
+  priceError:"",
+  newProductOpen:false
 };
 
 function saveState(){
   commandes = state.orders;
   if(state.loggedIn && state.currentUser){
-    // Sauvegarder les données de l'utilisateur actuel
     users[state.currentUser] = {
       password: users[state.currentUser]?.password || "",
       orders: commandes,
-      orderCounter: state.orderCounter
+        orderCounter: state.orderCounter,
+        menu: state.menu||defaultMenu()
     };
     localStorage.setItem("tabli_users", JSON.stringify(users));
   }
@@ -153,6 +160,7 @@ function loadState(){
       commandes = users[state.currentUser].orders || [];
       state.orders = commandes;
       state.orderCounter = users[state.currentUser].orderCounter || 108;
+      state.menu = users[state.currentUser].menu || defaultMenu();
     }
   }catch(e){console.error("Erreur de chargement:",e)}
 }
@@ -184,7 +192,7 @@ function render(){
   }else{
     app.innerHTML=`<div class="app">
       ${header()}
-      <main class="body">${state.role==="registre"?registerView():gerantView()}</main>
+      <main class="body">${state.role==="registre"?registerView():state.role==="prix"?prixView():gerantView()}</main>
     </div>`;
   }
   bindEvents();
@@ -201,7 +209,7 @@ function render(){
 }
 
 function header(){
-  const tabs=[["registre","Registre"],["gerant","Gérant"]];
+  const tabs=[["registre","Registre"],["gerant","Gérant"],["prix","Prix"]];
   return`<header class="header">
     <div class="brand">
       <div class="brand-mark">T</div>
@@ -212,6 +220,20 @@ function header(){
       <button class="tab-btn" data-action="logout" style="color:#ff6452;background:transparent;margin-left:auto">Déconnexion</button>
     </nav>
   </header>`;
+}
+
+function prixView(){
+  const items=(state.menu||MENU).filter(item=>item.cat===state.registerCat);
+  return`<div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap"><div class="section-label" style="margin-bottom:0">💰 Modifier les prix</div><button class="primary-btn" style="width:auto;padding:10px 14px;font-size:13px" data-action="toggle-new-product">+ Nouveau produit</button></div>
+    <div class="panel"><div class="panel-title">Tarifs de ton bar</div>
+      <div style="font-size:12px;color:#97a0ac;margin-bottom:14px">Les prix sont enregistrés uniquement pour ton compte.</div>
+      ${state.newProductOpen?`<div style="background:#12151c;border:1px solid #2c333f;border-radius:10px;padding:12px;margin-bottom:14px"><div class="panel-title" style="font-size:14px">Nouveau produit</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px"><input id="new-product-name" type="text" placeholder="Nom du produit" style="min-width:0;padding:9px;background:#1b2029;border:1px solid #2c333f;border-radius:7px;color:#f4efe6"><input id="new-product-price" type="number" min="1" step="50" placeholder="Prix en FCFA" style="min-width:0;padding:9px;background:#1b2029;border:1px solid #2c333f;border-radius:7px;color:#f4efe6"></div><select id="new-product-cat" style="width:100%;padding:9px;background:#1b2029;border:1px solid #2c333f;border-radius:7px;color:#f4efe6;margin-bottom:8px">${CATEGORIES.map(category=>`<option value="${category.id}" ${category.id===state.registerCat?"selected":""}>${category.icon} ${category.label}</option>`).join("")}</select>${state.priceError?`<div class="error-text">${state.priceError}</div>`:""}<div style="display:flex;gap:8px"><button class="primary-btn" data-action="add-product">Ajouter le produit</button><button class="cancel-btn" data-action="toggle-new-product">Annuler</button></div></div>`:""}
+      ${categoryPicker(state.registerCat,"prices")}
+      <div class="item-list">${items.map(item=>`<div class="item-row"><div class="item-main"><div class="item-name">${item.name}</div><div class="item-desc">${item.desc}</div></div><div style="display:flex;align-items:center;gap:6px"><input class="price-input" data-price-id="${item.id}" type="number" min="0" step="50" value="${item.price}" aria-label="Prix de ${item.name}" style="width:100px;padding:8px;background:#12151c;border:1px solid #2c333f;border-radius:7px;color:#f4efe6;text-align:right;font-family:'IBM Plex Mono'"><span style="font-size:11px;color:#97a0ac">FCFA</span><button class="delete-btn" data-action="delete-product" data-id="${item.id}" aria-label="Supprimer ${item.name}" title="Supprimer le produit">🗑️</button></div></div>`).join("")}</div>
+      <button class="primary-btn" style="margin-top:16px" data-action="save-prices">Enregistrer les prix</button>
+    </div>
+  </div>`;
 }
 
 function loginView(){
@@ -258,7 +280,7 @@ function categoryPicker(cat,scope){
 }
 
 function itemPicker(cat,draft,scope){
-  const items=MENU.filter(x=>x.cat===cat);
+  const items=(state.menu||MENU).filter(x=>x.cat===cat);
   return categoryPicker(cat,scope)+`<div class="item-list">${items.map(item=>{
     const qty=draft[item.id]?.qty||0;
     return`<div class="item-row">
@@ -368,13 +390,14 @@ function bindEvents(){
         if(!username.trim()){state.authError="Indique le nom de ton bar.";render();return}
         if(!password.trim()){state.authError="Indique un mot de passe.";render();return}
         if(users[username]){state.authError="Ce bar existe déjà!";render();return}
-        users[username] = {password, orders: [], orderCounter: 108};
+        users[username] = {password, orders: [], orderCounter: 108, menu: defaultMenu()};
         localStorage.setItem("tabli_users", JSON.stringify(users));
         state.loggedIn=true;
         state.currentUser=username;
         commandes=[];
         state.orders=[];
         state.orderCounter=108;
+        state.menu=defaultMenu();
         state.authUsername="";
         state.authPassword="";
         state.authPasswordVisible=false;
@@ -390,6 +413,9 @@ function bindEvents(){
         state.authPasswordVisible=false;
         commandes=[];
         state.orders=[];
+        state.menu=defaultMenu();
+        state.role="registre";
+        state.priceError="";
         render();
       }
       if(a==="toggle-password-visibility"){
@@ -399,6 +425,49 @@ function bindEvents(){
       
       if(a==="category"){
         state.registerCat=el.dataset.cat;
+        state.priceError="";
+        render();
+      }
+      if(a==="toggle-new-product"){
+        state.newProductOpen=!state.newProductOpen;
+        state.priceError="";
+        render();
+      }
+      if(a==="add-product"){
+        const name=document.getElementById("new-product-name")?.value.trim()||"";
+        const price=Number(document.getElementById("new-product-price")?.value);
+        const cat=document.getElementById("new-product-cat")?.value||state.registerCat;
+        if(!name){state.priceError="Indique le nom du produit.";render();return}
+        if(!Number.isFinite(price)||price<=0){state.priceError="Indique un prix supérieur à 0 FCFA.";render();return}
+        const nextMenu=state.menu||defaultMenu();
+        if(nextMenu.some(item=>normalizeProductName(item.name)===normalizeProductName(name))){state.priceError="Ce produit existe déjà dans ton menu.";render();return}
+        const nextId=Math.max(0,...nextMenu.map(item=>Number(item.id)||0))+1;
+        state.menu=[...nextMenu,{id:nextId,cat,name,desc:"Produit ajouté par le bar",price}];
+        state.registerCat=cat;
+        state.newProductOpen=false;
+        state.priceError="";
+        render();
+      }
+      if(a==="delete-product"){
+        const product=(state.menu||MENU).find(item=>Number(item.id)===id);
+        if(!product)return;
+        if(!window.confirm(`Supprimer le produit « ${product.name} » ?`))return;
+        state.menu=(state.menu||MENU).filter(item=>Number(item.id)!==id);
+        delete state.registerDraft[id];
+        render();
+      }
+      if(a==="save-prices"){
+        const updatedMenu=(state.menu||MENU).map(item=>{
+          const input=document.querySelector(`[data-price-id="${item.id}"]`);
+          return input?{...item,price:Number(input.value)}:item;
+        });
+        if(updatedMenu.some(item=>!Number.isFinite(item.price)||item.price<0)){
+          state.priceError="Chaque prix doit être un nombre positif.";
+          render();
+          return;
+        }
+        state.menu=updatedMenu;
+        state.priceError="";
         render();
       }
       if(a==="stats-period"){
@@ -406,7 +475,7 @@ function bindEvents(){
         render();
       }
       if(a==="add"||a==="remove"){
-        const item=MENU.find(x=>x.id===id);
+        const item=(state.menu||MENU).find(x=>x.id===id);
         state.registerDraft=a==="add"?addToDraft(state.registerDraft,item):removeFromDraft(state.registerDraft,item);
         render();
       }
