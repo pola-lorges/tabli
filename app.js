@@ -72,6 +72,27 @@ function timeAgo(ts){
   if(mins<60)return`il y a ${mins} min`;
   return`il y a ${Math.round(mins/60)} h`;
 }
+const STAT_PERIODS={day:"Jour",week:"Semaine",month:"Mois",year:"Année"};
+function dateToInputValue(ts=Date.now()){
+  const date=new Date(ts);
+  return`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
+}
+function isInStatsPeriod(ts,period,reference=new Date()){
+  const date=new Date(ts);
+  const selected=reference instanceof Date?new Date(reference):new Date(`${reference}T00:00:00`);
+  if(period==="year")return date.getFullYear()===selected.getFullYear();
+  if(period==="month")return date.getFullYear()===selected.getFullYear()&&date.getMonth()===selected.getMonth();
+  if(period==="week"){
+    selected.setHours(0,0,0,0);
+    const mondayOffset=(selected.getDay()+6)%7;
+    const monday=new Date(selected);
+    monday.setDate(selected.getDate()-mondayOffset);
+    const nextMonday=new Date(monday);
+    nextMonday.setDate(monday.getDate()+7);
+    return date>=monday&&date<nextMonday;
+  }
+  return date.getFullYear()===selected.getFullYear()&&date.getMonth()===selected.getMonth()&&date.getDate()===selected.getDate();
+}
 function seedOrders(){
   const now=Date.now();
   const mk=(id,label,items,status,minsAgo,source="client")=>({
@@ -108,7 +129,9 @@ let state={
   registerName:"",
   editingId:null,
   registerError:"",
-  registerModalOpen:false
+  registerModalOpen:false,
+  statsPeriod:"day",
+  statsDate:dateToInputValue()
 };
 
 function saveState(){
@@ -258,7 +281,7 @@ function registerView(){
     ${orders.length>0?`<div class="order-list">${orders.map(o=>`<div class="order-card" style="border-color:${state.editingId===o.id?"#f2a93b":"#232a35"}">
       <div class="order-card-head"><div><div class="order-client">${o.label}</div><div class="order-time"><span style="color:#97a0ac;font-size:12px">${formatDateTime(o.time)}</span> · <span style="font-size:12px;color:${STATUS_COLOR[o.status]}">${STATUS_LABEL[o.status]}</span></div></div>
       <div style="display:flex;gap:6px;align-items:center"><button class="status-btn" data-action="toggle-paid" data-id="${o.id}" style="background:${o.paid?"#6bbf8c33":"#ff645233"};color:${o.paid?"#6bbf8c":"#ff6452"};border:1px solid ${o.paid?"#6bbf8c55":"#ff645255"};padding:6px 10px;border-radius:4px;font-size:12px;font-weight:500;cursor:pointer">${o.paid?"✓ Payé":"⊘ Non payé"}</button><button class="edit-btn" data-action="edit" data-id="${o.id}">✏️</button><button class="delete-btn" data-action="delete" data-id="${o.id}">🗑️</button></div></div>
-      <div class="order-items">${o.items.map(it=>`<div style="font-size:13px;color:#c7cdd6;padding:2px 0"><span style="display:inline-block;width:26px;color:#f2a93b" class="mono">${it.qty}×</span>${it.name}</div>`).join("")}</div>
+      <div class="order-items">${o.items.map(it=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:13px;color:#c7cdd6;padding:4px 0"><span style="min-width:0"><span style="display:inline-block;width:26px;color:#f2a93b" class="mono">${it.qty}×</span>${it.name}</span><span class="mono" style="color:#97a0ac;font-size:11px;white-space:nowrap">${fcfa(it.price)} × ${it.qty} = <strong style="color:#f2a93b">${fcfa(it.price*it.qty)}</strong></span></div>`).join("")}</div>
       <div class="order-total">${fcfa(o.total)}</div>
     </div>`).join("")}</div>`:`<div class="empty-state">Aucune commande enregistrée pour l'instant. Crée ta première !</div>`}
     ${state.registerModalOpen?registerFormModal():""}
@@ -273,34 +296,43 @@ function registerFormModal(){
       <div class="form-actions"><button class="primary-btn" data-action="submit-register">${state.editingId?"✏️ Mettre à jour la commande":"+ Ajouter la commande"}</button>${state.editingId?`<button class="cancel-btn" data-action="cancel-edit">✕ Annuler</button>`:""}</div>
       <label class="label" style="margin-top:16px">Nom du client</label>
       <div class="name-row"><span style="color:#5b6472">👤</span><input id="client-name" class="name-input" value="${escapeHtml(state.registerName)}" placeholder="Ex : Achille" autofocus></div>
+      ${state.registerError?`<div class="error-text">${state.registerError}</div>`:""}
+      ${items.length>0?`<div class="ticket">${items.map(it=>`<div class="ticket-row"><span class="mono" style="color:#97a0ac;width:24px;font-size:12px">${it.qty}×</span><span class="flex-1" style="font-size:13px">${it.name}</span><span class="mono" style="color:#c7cdd6;font-size:12px">${fcfa(it.price*it.qty)}</span></div>`).join("")}<div class="ticket-divider"></div><div class="ticket-total"><span>Total</span><span class="mono">${fcfa(draftTotal(state.registerDraft))}</span></div></div>`:""}
       <label class="label" style="margin-top:16px">Articles</label>
       ${itemPicker(state.registerCat,state.registerDraft,"register")}
-      ${items.length>0?`<div class="ticket">${items.map(it=>`<div class="ticket-row"><span class="mono" style="color:#97a0ac;width:24px;font-size:12px">${it.qty}×</span><span class="flex-1" style="font-size:13px">${it.name}</span><span class="mono" style="color:#c7cdd6;font-size:12px">${fcfa(it.price*it.qty)}</span></div>`).join("")}<div class="ticket-divider"></div><div class="ticket-total"><span>Total</span><span class="mono">${fcfa(draftTotal(state.registerDraft))}</span></div></div>`:""}
-      ${state.registerError?`<div class="error-text">${state.registerError}</div>`:""}
     </div>
   </div>`;
 }
 
 function gerantView(){
-  const revenue=commandes.reduce((s,o)=>s+o.total,0),count=commandes.length,avg=count?Math.round(revenue/count):0;
-  const paid=commandes.filter(o=>o.paid).reduce((s,o)=>s+o.total,0);
-  const byCat={},byItem={};
-  commandes.forEach(o=>o.items.forEach(it=>{
-    const m=MENU.find(x=>x.id===it.id),cat=m?.cat||"autre";
-    byCat[cat]=(byCat[cat]||0)+it.price*it.qty;
+  const period=state.statsPeriod||"day";
+  const statsDate=state.statsDate||dateToInputValue();
+  const periodOrders=commandes.filter(o=>isInStatsPeriod(o.time,period,statsDate));
+  const revenue=periodOrders.reduce((s,o)=>s+o.total,0),count=periodOrders.length,avg=count?Math.round(revenue/count):0;
+  const paid=periodOrders.filter(o=>o.paid).reduce((s,o)=>s+o.total,0);
+  const byItem={};
+  periodOrders.forEach(o=>o.items.forEach(it=>{
     byItem[it.name]=(byItem[it.name]||0)+it.qty;
   }));
-  const catChart=CATEGORIES.map(c=>({name:c.label,value:byCat[c.id]||0}));
   const topItems=Object.entries(byItem).sort((a,b)=>b[1]-a[1]).slice(0,5);
-  const maxCat=Math.max(1,...catChart.map(x=>x.value)),maxTop=topItems[0]?.[1]||1;
+  const maxTop=topItems[0]?.[1]||1;
   return`<div class="gerant-wrap">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px">
+      <div class="section-label" style="margin-bottom:0">📊 Statistiques</div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <label for="stats-date" style="font-size:12px;color:#97a0ac">Date</label>
+        <input id="stats-date" type="date" value="${statsDate}" style="padding:7px 9px;background:#1b2029;border:1px solid #2c333f;border-radius:7px;color:#f4efe6;font-family:Inter;font-size:12px">
+      <div style="display:flex;gap:6px;background:#1b2029;padding:4px;border-radius:10px">
+        ${Object.entries(STAT_PERIODS).map(([id,label])=>`<button data-action="stats-period" data-period="${id}" style="border:none;border-radius:7px;padding:7px 12px;background:${period===id?"#f2a93b":"transparent"};color:${period===id?"#12151c":"#c7cdd6"};font-size:12px;font-weight:600">${label}</button>`).join("")}
+      </div>
+      </div>
+    </div>
     <div class="stat-grid">
-      ${statCard("Chiffre d'affaires (jour)",fcfa(revenue),"📈")}
+      ${statCard(`Chiffre d'affaires (${STAT_PERIODS[period].toLowerCase()})`,fcfa(revenue),"📈")}
       ${statCard("Commandes",count,"🧾")}
       ${statCard("Panier moyen",fcfa(avg),"🛒")}
       ${statCard("Montant encaissé",fcfa(paid),"💰")}
     </div>
-    <div class="panel"><div class="panel-title">Ventes par catégorie</div>${catChart.map(c=>`<div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;font-size:13px;color:#c7cdd6;margin-bottom:4px"><span>${c.name}</span><span class="mono">${fcfa(c.value)}</span></div><div class="bar-track"><div class="bar-fill" style="width:${c.value/maxCat*100}%"></div></div></div>`).join("")}</div>
     <div class="panel"><div class="panel-title">Produits les plus commandés</div>${topItems.map(([name,qty])=>`<div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;font-size:13px;color:#c7cdd6;margin-bottom:4px"><span>${name}</span><span class="mono">${qty}</span></div><div class="bar-track"><div class="bar-fill" style="width:${qty/maxTop*100}%"></div></div></div>`).join("")}</div>
   </div>`;
 }
@@ -369,6 +401,10 @@ function bindEvents(){
         state.registerCat=el.dataset.cat;
         render();
       }
+      if(a==="stats-period"){
+        state.statsPeriod=el.dataset.period;
+        render();
+      }
       if(a==="add"||a==="remove"){
         const item=MENU.find(x=>x.id===id);
         state.registerDraft=a==="add"?addToDraft(state.registerDraft,item):removeFromDraft(state.registerDraft,item);
@@ -392,7 +428,7 @@ function bindEvents(){
       if(a==="submit-register"){
         state.registerName=document.getElementById("client-name")?.value||"";
         const items=itemsFromDraft(state.registerDraft);
-        if(!state.registerName.trim()){state.registerError="Indique le nom du client.";render();return}
+        if(!state.registerName.trim()){state.registerError="Le nom du client est obligatoire pour enregistrer la commande.";render();return}
         if(!items.length){state.registerError="Ajoute au moins un article à la commande.";render();return}
         const total=draftTotal(state.registerDraft);
         if(state.editingId){
@@ -410,9 +446,14 @@ function bindEvents(){
   const authUsername = document.getElementById("auth-username");
   const authPassword = document.getElementById("auth-password");
   const clientName = document.getElementById("client-name");
+  const statsDate = document.getElementById("stats-date");
   if(authUsername) authUsername.addEventListener("input", e => state.authUsername = e.target.value);
   if(authPassword) authPassword.addEventListener("input", e => state.authPassword = e.target.value);
   if(clientName) clientName.addEventListener("input", e => state.registerName = e.target.value);
+  if(statsDate) statsDate.addEventListener("change", e => {
+    state.statsDate=e.target.value||dateToInputValue();
+    render();
+  });
 }
 loadUsers();
 loadState();
