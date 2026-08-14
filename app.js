@@ -140,7 +140,8 @@ let state={
   statsDate:dateToInputValue(),
   menu:defaultMenu(),
   priceError:"",
-  newProductOpen:false
+  newProductOpen:false,
+  orderDetailId:null
 };
 
 async function loadState(){
@@ -208,7 +209,8 @@ function render(){
   }else{
     app.innerHTML=`<div class="app">
       ${header()}
-      <main class="body">${state.role==="registre"?registerView():state.role==="prix"?prixView():gerantView()}</main>
+      <main class="body">${state.role==="registre"?registerView():state.role==="prix"?prixView():state.role==="clients"?clientsView():gerantView()}</main>
+      ${state.orderDetailId?orderDetailModal():""}
     </div>`;
   }
   bindEvents();
@@ -224,8 +226,14 @@ function render(){
   saveState();
 }
 
+function orderDetailModal(){
+  const order=state.orders.find(item=>String(item.id)===String(state.orderDetailId));
+  if(!order)return"";
+  return`<div class="modal-overlay" data-action="close-order-detail"><div class="modal-sheet" onclick="event.stopPropagation()"><div class="modal-header"><div><div class="title" style="font-size:18px">Détail de la commande</div><div class="order-time">${escapeHtml(order.label)} · ${formatDateTime(order.time)}</div></div><button class="icon-btn" data-action="close-order-detail">✕</button></div><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;font-size:12px"><span style="color:${order.paid?"#6bbf8c":"#ff6452"}">${order.paid?"✓ Payée":"⊘ Non payée"}</span><span style="color:${STATUS_COLOR[order.status]}">${escapeHtml(STATUS_LABEL[order.status]||order.status)}</span></div><div class="ticket">${order.items.map(item=>`<div class="ticket-row"><span class="mono" style="color:#f2a93b;width:28px">${item.qty}×</span><span class="flex-1">${escapeHtml(item.name)}<small style="display:block;color:#97a0ac;font-size:11px">${fcfa(item.price)} l'unité</small></span><span class="mono" style="font-size:12px">${fcfa(item.price*item.qty)}</span></div>`).join("")}<div class="ticket-divider"></div><div class="ticket-total"><span>Total</span><span class="mono">${fcfa(order.total)}</span></div></div></div></div>`;
+}
+
 function header(){
-  const tabs=[["registre","Registre"],["gerant","Gérant"],["prix","Prix"]];
+  const tabs=[["registre","Registre"],["gerant","Gérant"],["clients","Clients"],["prix","Prix"]];
   return`<header class="header">
     <div class="brand">
       <div class="brand-mark">T</div>
@@ -236,6 +244,31 @@ function header(){
       <button class="tab-btn" data-action="logout" style="color:#ff6452;background:transparent;margin-left:auto">Déconnexion</button>
     </nav>
   </header>`;
+}
+
+function clientsView(){
+  const clientsByName={};
+  state.orders.forEach(order=>{
+    const key=normalizeProductName(order.label);
+    const client=clientsByName[key]||{name:order.label,orders:0,total:0,quantity:0,lastOrder:0,products:{},details:[]};
+    client.orders++;
+    client.total+=order.total;
+    client.lastOrder=Math.max(client.lastOrder,order.time);
+    order.items.forEach(item=>{
+      client.quantity+=item.qty;
+      client.products[item.name]=(client.products[item.name]||0)+item.qty;
+    });
+    client.details.push(order);
+    clientsByName[key]=client;
+  });
+  const clients=Object.values(clientsByName).sort((a,b)=>b.lastOrder-a.lastOrder);
+  return`<div>
+    <div class="section-label">👥 Liste des clients</div>
+    <div class="panel"><div class="panel-title">Clients enregistrés (${clients.length})</div>${clients.map(client=>{
+      const favorite=Object.entries(client.products).sort((a,b)=>b[1]-a[1])[0];
+      return`<div class="order-card" style="margin-bottom:10px"><div class="order-card-head"><div><div class="order-client">${escapeHtml(client.name)}</div><div class="order-time">Dernière commande : ${formatDateTime(client.lastOrder)}</div></div><div class="mono" style="color:#f2a93b">${fcfa(client.total)}</div></div><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:12px;color:#c7cdd6;margin-bottom:8px"><span>${client.orders} commande${client.orders>1?"s":""}</span><span>${client.quantity} article${client.quantity>1?"s":""} consommé${client.quantity>1?"s":""}</span><span>Produit préféré : ${escapeHtml(favorite?.[0]||"-")}</span></div><div style="border-top:1px solid #232a35;padding-top:6px">${client.details.sort((a,b)=>b.time-a.time).map(order=>`<div data-order-detail="${order.id}" style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:5px 0;font-size:12px;color:#c7cdd6;cursor:pointer"><span>${formatDateTime(order.time)} · ${order.items.map(item=>`${item.qty}× ${escapeHtml(item.name)}`).join(", ")}</span><span class="mono" style="color:${order.paid?"#6bbf8c":"#f2a93b"}">${fcfa(order.total)} · ${order.paid?"Payée":"Non payée"}</span></div>`).join("")}</div></div>`;
+    }).join("")||"<div class=\"empty-state\">Aucun client enregistré.</div>"}</div>
+  </div>`;
 }
 
 function prixView(){
@@ -316,7 +349,7 @@ function registerView(){
       <div class="list-header"><span>${orders.length} commande${orders.length>1?"s":""}</span><span class="mono" style="color:#f2a93b">${fcfa(total)}</span></div>
       <button class="primary-btn" style="width:auto;padding:10px 16px;font-size:13px" data-action="open-register-modal">+ Nouvelle commande</button>
     </div>`:`<div style="display:flex;justify-content:center;margin-bottom:20px"><button class="primary-btn" style="padding:12px 20px" data-action="open-register-modal">+ Ajouter une commande</button></div>`}
-    ${orders.length>0?`<div class="order-list">${orders.map(o=>`<div class="order-card" style="border-color:${state.editingId===o.id?"#f2a93b":"#232a35"}">
+    ${orders.length>0?`<div class="order-list">${orders.map(o=>`<div class="order-card" data-order-detail="${o.id}" style="border-color:${state.editingId===o.id?"#f2a93b":"#232a35"};cursor:pointer">
       <div class="order-card-head"><div><div class="order-client">${o.label}</div><div class="order-time"><span style="color:#97a0ac;font-size:12px">${formatDateTime(o.time)}</span> · <span style="font-size:12px;color:${STATUS_COLOR[o.status]}">${STATUS_LABEL[o.status]}</span></div></div>
       <div style="display:flex;gap:6px;align-items:center"><button class="status-btn" data-action="toggle-paid" data-id="${o.id}" style="background:${o.paid?"#6bbf8c33":"#ff645233"};color:${o.paid?"#6bbf8c":"#ff6452"};border:1px solid ${o.paid?"#6bbf8c55":"#ff645255"};padding:6px 10px;border-radius:4px;font-size:12px;font-weight:500;cursor:pointer">${o.paid?"✓ Payé":"⊘ Non payé"}</button><button class="edit-btn" data-action="edit" data-id="${o.id}">✏️</button><button class="delete-btn" data-action="delete" data-id="${o.id}">🗑️</button></div></div>
       <div class="order-items">${o.items.map(it=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:13px;color:#c7cdd6;padding:4px 0"><span style="min-width:0"><span style="display:inline-block;width:26px;color:#f2a93b" class="mono">${it.qty}×</span>${it.name}</span><span class="mono" style="color:#97a0ac;font-size:11px;white-space:nowrap">${fcfa(it.price)} × ${it.qty} = <strong style="color:#f2a93b">${fcfa(it.price*it.qty)}</strong></span></div>`).join("")}</div>
@@ -352,6 +385,20 @@ function gerantView(){
   periodOrders.forEach(o=>o.items.forEach(it=>{
     byItem[it.name]=(byItem[it.name]||0)+it.qty;
   }));
+  const clientsByName={};
+  periodOrders.forEach(order=>{
+    const key=normalizeProductName(order.label);
+    const client=clientsByName[key]||{name:order.label,orders:0,total:0,quantity:0,lastOrder:0,products:{}};
+    client.orders++;
+    client.total+=order.total;
+    client.lastOrder=Math.max(client.lastOrder,order.time);
+    order.items.forEach(item=>{
+      client.quantity+=item.qty;
+      client.products[item.name]=(client.products[item.name]||0)+item.qty;
+    });
+    clientsByName[key]=client;
+  });
+  const clients=Object.values(clientsByName).sort((a,b)=>b.total-a.total);
   const topItems=Object.entries(byItem).sort((a,b)=>b[1]-a[1]).slice(0,5);
   const maxTop=topItems[0]?.[1]||1;
   return`<div class="gerant-wrap">
@@ -372,6 +419,10 @@ function gerantView(){
       ${statCard("Montant encaissé",fcfa(paid),"💰")}
     </div>
     <div class="panel"><div class="panel-title">Produits les plus commandés</div>${topItems.map(([name,qty])=>`<div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;font-size:13px;color:#c7cdd6;margin-bottom:4px"><span>${name}</span><span class="mono">${qty}</span></div><div class="bar-track"><div class="bar-fill" style="width:${qty/maxTop*100}%"></div></div></div>`).join("")}</div>
+    <div class="panel"><div class="panel-title">Clients et consommation</div>${clients.map(client=>{
+      const favorite=Object.entries(client.products).sort((a,b)=>b[1]-a[1])[0];
+      return`<div class="order-card" style="margin-bottom:10px"><div class="order-card-head"><div><div class="order-client">${escapeHtml(client.name)}</div><div class="order-time">Dernière commande : ${formatDateTime(client.lastOrder)}</div></div><div class="mono" style="color:#f2a93b">${fcfa(client.total)}</div></div><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:12px;color:#c7cdd6"><span>${client.orders} commande${client.orders>1?"s":""}</span><span>${client.quantity} article${client.quantity>1?"s":""} consommé${client.quantity>1?"s":""}</span><span>Produit préféré : ${escapeHtml(favorite?.[0]||"-")}</span></div></div>`;
+    }).join("")||"<div class=\"empty-state\">Aucun client sur cette période.</div>"}</div>
   </div>`;
 }
 function statCard(label,value,icon){return`<div class="stat-card"><span style="font-size:16px">${icon}</span><div class="title" style="font-size:19px;margin-top:8px">${value}</div><div style="font-size:12px;color:#97a0ac;margin-top:2px">${label}</div></div>`}
@@ -379,6 +430,11 @@ function escapeHtml(s){return String(s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":
 
 function bindEvents(){
   document.querySelectorAll("[data-role]").forEach(b=>b.onclick=()=>{state.role=b.dataset.role;render()});
+  document.querySelectorAll("[data-order-detail]").forEach(el=>el.addEventListener("click",e=>{
+    e.stopPropagation();
+    state.orderDetailId=el.dataset.orderDetail;
+    render();
+  }));
   document.querySelectorAll("[data-action]").forEach(el=>{
     el.addEventListener("click",async e=>{
       const a=el.dataset.action, id=Number(el.dataset.id);
@@ -400,7 +456,12 @@ function bindEvents(){
         if(!username.trim()){state.authError="Indique l'e-mail du bar.";render();return}
         if(!password.trim()){state.authError="Indique un mot de passe.";render();return}
         const {data,error}=await supabaseClient.auth.signUp({email:username.trim(),password,options:{data:{bar_name:username.trim().split("@")[0]}}});
-        if(error){state.authError=error.message;render();return}
+        if(error){
+          const message=error.message.toLowerCase();
+          state.authError=message.includes("rate limit")||message.includes("email rate")?"Limite d'e-mails Supabase atteinte. Attends avant de réessayer, puis utilise Connexion si ce compte existe déjà.":error.message;
+          render();
+          return;
+        }
         if(!data.session){state.authError="Compte créé. Vérifie ton e-mail avant de te connecter.";render();return}
         try{await loadState();render()}catch(loadError){state.loggedIn=false;state.authError=loadError.message||"Erreur de chargement Supabase.";render()}
       }
@@ -485,6 +546,7 @@ function bindEvents(){
       }
       if(a==="open-register-modal"){state.registerModalOpen=true;state.editingId=null;state.registerName="";state.registerDraft={};state.registerError="";render()}
       if(a==="close-register-modal"){state.registerModalOpen=false;state.editingId=null;state.registerName="";state.registerDraft={};state.registerError="";render()}
+      if(a==="close-order-detail"){state.orderDetailId=null;render()}
       if(a==="edit"){
         const o=state.orders.find(x=>x.id===el.dataset.id);if(!o)return;
         state.editingId=o.id;state.registerName=o.label;state.registerDraft={};o.items.forEach(it=>state.registerDraft[it.id]={...it});state.registerError="";state.registerModalOpen=true;render();
