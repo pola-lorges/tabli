@@ -141,7 +141,8 @@ let state={
   menu:defaultMenu(),
   priceError:"",
   newProductOpen:false,
-  orderDetailId:null
+  orderDetailId:null,
+  registerOrderFilter:"open"
 };
 
 async function loadState(){
@@ -229,7 +230,7 @@ function render(){
 function orderDetailModal(){
   const order=state.orders.find(item=>String(item.id)===String(state.orderDetailId));
   if(!order)return"";
-  return`<div class="modal-overlay" data-action="close-order-detail"><div class="modal-sheet" onclick="event.stopPropagation()"><div class="modal-header"><div><div class="title" style="font-size:18px">Détail de la commande</div><div class="order-time">${escapeHtml(order.label)} · ${formatDateTime(order.time)}</div></div><button class="icon-btn" data-action="close-order-detail">✕</button></div><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;font-size:12px"><span style="color:${order.paid?"#6bbf8c":"#ff6452"}">${order.paid?"✓ Payée":"⊘ Non payée"}</span><span style="color:${STATUS_COLOR[order.status]}">${escapeHtml(STATUS_LABEL[order.status]||order.status)}</span></div><div class="ticket">${order.items.map(item=>`<div class="ticket-row"><span class="mono" style="color:#f2a93b;width:28px">${item.qty}×</span><span class="flex-1">${escapeHtml(item.name)}<small style="display:block;color:#97a0ac;font-size:11px">${fcfa(item.price)} l'unité</small></span><span class="mono" style="font-size:12px">${fcfa(item.price*item.qty)}</span></div>`).join("")}<div class="ticket-divider"></div><div class="ticket-total"><span>Total</span><span class="mono">${fcfa(order.total)}</span></div></div></div></div>`;
+  return`<div class="modal-overlay" data-action="close-order-detail"><div class="modal-sheet" onclick="event.stopPropagation()"><div class="modal-header"><div><div class="title" style="font-size:18px">Détail de la commande</div><div style="font-family:Fraunces;font-size:22px;font-weight:700;color:#f2a93b;margin-top:5px">${escapeHtml(order.label)}</div><div class="order-time">${formatDateTime(order.time)}</div></div><button class="icon-btn" data-action="close-order-detail">✕</button></div><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;font-size:12px"><span style="color:${order.paid?"#6bbf8c":"#ff6452"}">${order.paid?"✓ Payée":"⊘ Non payée"}</span><span style="color:${STATUS_COLOR[order.status]}">${escapeHtml(STATUS_LABEL[order.status]||order.status)}</span></div><div class="ticket">${order.items.map(item=>`<div class="ticket-row"><span class="mono" style="color:#f2a93b;width:28px">${item.qty}×</span><span class="flex-1">${escapeHtml(item.name)}<small style="display:block;color:#97a0ac;font-size:11px">${fcfa(item.price)} l'unité</small></span><span class="mono" style="font-size:12px">${fcfa(item.price*item.qty)}</span></div>`).join("")}<div class="ticket-divider"></div><div class="ticket-total"><span>Total</span><span class="mono">${fcfa(order.total)}</span></div></div></div></div>`;
 }
 
 function header(){
@@ -340,21 +341,35 @@ function itemPicker(cat,draft,scope){
 }
 
 function registerView(){
-  const orders=state.orders.filter(o=>o.source==="registre");
+  if(state.registerOrderFilter==="closed")return closedOrdersView();
+  const orders=state.orders.filter(o=>o.source==="registre"&&!o.paid);
   const total=orders.reduce((s,o)=>s+o.total,0);
   return`<div>
     <div class="section-label">📋 Commandes du comptoir</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;background:#1b2029;padding:4px;border-radius:10px;width:max-content;max-width:100%"><button data-action="register-order-filter" data-filter="open" style="border:none;border-radius:7px;padding:7px 12px;background:#f2a93b;color:#12151c;font-size:12px;font-weight:600">Ouvertes</button><button data-action="register-order-filter" data-filter="closed" style="border:none;border-radius:7px;padding:7px 12px;background:transparent;color:#c7cdd6;font-size:12px;font-weight:600">Clôturées</button></div>
+    </div>
     ${orders.length>0?`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:12px">
       <div class="list-header"><span>${orders.length} commande${orders.length>1?"s":""}</span><span class="mono" style="color:#f2a93b">${fcfa(total)}</span></div>
       <button class="primary-btn" style="width:auto;padding:10px 16px;font-size:13px" data-action="open-register-modal">+ Nouvelle commande</button>
     </div>`:`<div style="display:flex;justify-content:center;margin-bottom:20px"><button class="primary-btn" style="padding:12px 20px" data-action="open-register-modal">+ Ajouter une commande</button></div>`}
     ${orders.length>0?`<div class="order-list">${orders.map(o=>`<div class="order-card" data-order-detail="${o.id}" style="border-color:${state.editingId===o.id?"#f2a93b":"#232a35"};cursor:pointer">
       <div class="order-card-head"><div><div class="order-client">${o.label}</div><div class="order-time"><span style="color:#97a0ac;font-size:12px">${formatDateTime(o.time)}</span> · <span style="font-size:12px;color:${STATUS_COLOR[o.status]}">${STATUS_LABEL[o.status]}</span></div></div>
-      <div style="display:flex;gap:6px;align-items:center"><button class="status-btn" data-action="toggle-paid" data-id="${o.id}" style="background:${o.paid?"#6bbf8c33":"#ff645233"};color:${o.paid?"#6bbf8c":"#ff6452"};border:1px solid ${o.paid?"#6bbf8c55":"#ff645255"};padding:6px 10px;border-radius:4px;font-size:12px;font-weight:500;cursor:pointer">${o.paid?"✓ Payé":"⊘ Non payé"}</button><button class="edit-btn" data-action="edit" data-id="${o.id}">✏️</button><button class="delete-btn" data-action="delete" data-id="${o.id}">🗑️</button></div></div>
+      <div style="display:flex;gap:6px;align-items:center"><button class="status-btn" data-action="toggle-paid" data-id="${o.id}" style="background:${o.paid?"#6bbf8c33":"#ff645233"};color:${o.paid?"#6bbf8c":"#ff6452"};border:1px solid ${o.paid?"#6bbf8c55":"#ff645255"};padding:6px 10px;border-radius:4px;font-size:12px;font-weight:500;cursor:pointer">${o.paid?"✓ Clôturée":"⊘ Ouverte"}</button><button class="edit-btn" data-action="edit" data-id="${o.id}">✏️</button><button class="delete-btn" data-action="delete" data-id="${o.id}">🗑️</button></div></div>
       <div class="order-items">${o.items.map(it=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:13px;color:#c7cdd6;padding:4px 0"><span style="min-width:0"><span style="display:inline-block;width:26px;color:#f2a93b" class="mono">${it.qty}×</span>${it.name}</span><span class="mono" style="color:#97a0ac;font-size:11px;white-space:nowrap">${fcfa(it.price)} × ${it.qty} = <strong style="color:#f2a93b">${fcfa(it.price*it.qty)}</strong></span></div>`).join("")}</div>
       <div class="order-total">${fcfa(o.total)}</div>
     </div>`).join("")}</div>`:`<div class="empty-state">Aucune commande enregistrée pour l'instant. Crée ta première !</div>`}
     ${state.registerModalOpen?registerFormModal():""}
+  </div>`;
+}
+
+function closedOrdersView(){
+  const orders=state.orders.filter(order=>order.source==="registre"&&order.paid);
+  const total=orders.reduce((sum,order)=>sum+order.total,0);
+  return`<div>
+    <div class="section-label">✅ Commandes clôturées</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;background:#1b2029;padding:4px;border-radius:10px;width:max-content;max-width:100%"><button data-action="register-order-filter" data-filter="open" style="border:none;border-radius:7px;padding:7px 12px;background:transparent;color:#c7cdd6;font-size:12px;font-weight:600">Ouvertes</button><button data-action="register-order-filter" data-filter="closed" style="border:none;border-radius:7px;padding:7px 12px;background:#f2a93b;color:#12151c;font-size:12px;font-weight:600">Clôturées</button></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:12px"><div class="list-header"><span>${orders.length} commande${orders.length>1?"s":""} payée${orders.length>1?"s":""}</span><span class="mono" style="color:#6bbf8c">${fcfa(total)}</span></div></div>
+    ${orders.length?`<div class="order-list">${orders.map(order=>`<div class="order-card" data-order-detail="${order.id}" style="border-color:#6bbf8c55;cursor:pointer"><div class="order-card-head"><div><div class="order-client">${escapeHtml(order.label)}</div><div class="order-time"><span style="color:#97a0ac;font-size:12px">${formatDateTime(order.time)}</span> · <span style="color:${STATUS_COLOR[order.status]};font-size:12px">${escapeHtml(STATUS_LABEL[order.status]||order.status)}</span></div></div><div style="display:flex;gap:6px;align-items:center"><button class="status-btn" data-action="toggle-paid" data-id="${order.id}" style="background:#6bbf8c33;color:#6bbf8c;border:1px solid #6bbf8c55;padding:6px 10px;border-radius:4px;font-size:12px;font-weight:500;cursor:pointer">✓ Payé</button><button class="delete-btn" data-action="delete" data-id="${order.id}">🗑️</button></div></div><div class="order-items">${order.items.map(item=>`<div style="display:flex;justify-content:space-between;gap:10px;font-size:13px;color:#c7cdd6;padding:4px 0"><span>${item.qty}× ${escapeHtml(item.name)}</span><span class="mono" style="color:#97a0ac;font-size:11px">${fcfa(item.price*item.qty)}</span></div>`).join("")}</div><div class="order-total">${fcfa(order.total)}</div></div>`).join("")}</div>`:`<div class="empty-state">Aucune commande clôturée.</div>`}
   </div>`;
 }
 
@@ -536,6 +551,10 @@ function bindEvents(){
       }
       if(a==="stats-period"){
         state.statsPeriod=el.dataset.period;
+        render();
+      }
+      if(a==="register-order-filter"){
+        state.registerOrderFilter=el.dataset.filter;
         render();
       }
       if(a==="add"||a==="remove"){
