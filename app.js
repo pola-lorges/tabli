@@ -310,9 +310,8 @@ function loginView(){
         
         ${state.authError?`<div style="background:#ff645233;border:1px solid #ff645255;color:#ff6452;padding:10px;border-radius:4px;font-size:13px;margin-bottom:16px">${state.authError}</div>`:""}
         
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-          <button data-action="register" style="padding:12px;background:#f2a93b;color:#12151c;border:none;border-radius:4px;font-weight:600;cursor:pointer;font-size:14px">Créer</button>
-          <button data-action="login" style="padding:12px;background:#232a35;color:#f4efe6;border:1px solid #2c333f;border-radius:4px;font-weight:600;cursor:pointer;font-size:14px">Connexion</button>
+        <div>
+          <button data-action="login" style="width:100%;padding:12px;background:#f2a93b;color:#12151c;border:none;border-radius:4px;font-weight:600;cursor:pointer;font-size:14px">Connexion</button>
         </div>
       </div>
       
