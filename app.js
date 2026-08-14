@@ -210,7 +210,7 @@ function render(){
   }else{
     app.innerHTML=`<div class="app">
       ${header()}
-      <main class="body">${state.role==="registre"?registerView():state.role==="prix"?prixView():state.role==="clients"?clientsView():gerantView()}</main>
+      <main class="body">${state.role==="registre"?registerView():state.role==="prix"?prixView():state.role==="clients"?clientsView():state.role==="aide"?helpView():gerantView()}</main>
       ${state.orderDetailId?orderDetailModal():""}
     </div>`;
   }
@@ -234,7 +234,7 @@ function orderDetailModal(){
 }
 
 function header(){
-  const tabs=[["registre","Registre"],["gerant","Gérant"],["clients","Clients"],["prix","Prix"]];
+  const tabs=[["registre","Registre"],["gerant","Gérant"],["clients","Clients"],["prix","Prix"],["aide","Aide"]];
   return`<header class="header">
     <div class="brand">
       <div class="brand-mark">T</div>
@@ -245,6 +245,21 @@ function header(){
       <button class="tab-btn" data-action="logout" style="color:#ff6452;background:transparent;margin-left:auto">Déconnexion</button>
     </nav>
   </header>`;
+}
+
+function helpView(){
+  const section=(title,content)=>`<div class="panel" style="margin-bottom:12px"><div class="panel-title">${title}</div><div style="color:#c7cdd6;font-size:13px;line-height:1.7">${content}</div></div>`;
+  return`<div class="help-page"><div class="section-label">📖 Guide d'utilisation de Tabli</div><div class="panel" style="margin-bottom:12px"><div class="title" style="font-size:24px;margin-bottom:8px">Gérer ton bar simplement</div><div style="color:#c7cdd6;font-size:13px;line-height:1.7">Tabli centralise les commandes, les paiements, les produits, les clients et les statistiques de ton bar.</div></div>
+    ${section("1. Connexion et données",`Connecte-toi avec l'e-mail et le mot de passe du compte du bar. Les comptes et les données sont gérés par Supabase. Chaque bar accède uniquement à ses propres commandes, clients et tarifs grâce aux règles de sécurité de la base de données. Une connexion Internet est nécessaire pour charger et enregistrer les informations.`)}
+    ${section("2. Créer une commande",`Dans Registre, ouvre une nouvelle commande, renseigne le nom du client et sélectionne les produits. Les boutons + et - ajustent les quantités. Le récapitulatif affiche le prix unitaire, la quantité, le sous-total et le total. Le nom du client et au moins un article sont obligatoires.`)}
+    ${section("3. Paiement et clôture",`Une commande non payée reste dans les commandes ouvertes. Lorsque le client paie, clique sur le bouton Non payé : il devient Payé et la commande est déplacée dans le sous-onglet Clôturées du Registre. Cliquer à nouveau sur Payé permet de la rouvrir.`)}
+    ${section("4. Détail d'une commande",`Clique sur une commande dans le Registre ou dans la page Clients. Une modal affiche le client, la date et l'heure, les statuts, les produits, les quantités, les prix unitaires, les sous-totaux et le total. Ferme-la avec X ou en cliquant à l'extérieur.`)}
+    ${section("5. Clients et historique",`L'onglet Clients regroupe les commandes portant le même nom. Il affiche le nombre de commandes, le total consommé, les articles consommés, le produit préféré et la dernière commande. Chaque commande du client est détaillée avec sa date, ses produits, son montant et son statut. Utilise toujours la même écriture pour un même client.`)}
+    ${section("6. Produits et prix",`Dans Prix, modifie un tarif puis clique sur Enregistrer les prix. Avec + Nouveau produit, renseigne le nom, le prix et la catégorie. Les doublons sont refusés même avec des différences de casse, d'accents ou d'espaces. Supprimer un produit le retire des prochaines commandes, mais les anciennes commandes gardent leur historique.`)}
+    ${section("7. Statistiques du gérant",`L'onglet Gérant présente le chiffre d'affaires, les commandes, le panier moyen, le montant encaissé, les produits les plus commandés et la consommation des clients. Choisis une date et une période : Jour, Semaine, Mois ou Année. La semaine va du lundi au dimanche.`)}
+    ${section("8. Bonnes pratiques",`Vérifie le nom du client et les prix avant d'enregistrer. Marque rapidement les commandes payées. Ne partage pas les mots de passe. Si une opération échoue, vérifie Internet puis réessaie. Les anciennes commandes conservent les prix enregistrés au moment de leur création.`)}
+    <div class="panel" style="margin-bottom:12px"><div class="panel-title">À propos du créateur</div><div style="color:#c7cdd6;font-size:13px;line-height:1.8"><strong style="color:#f2a93b;font-size:16px">POLA LORGES ANTHONY</strong><br>Ingénieur en génie logiciel<br><span style="color:#97a0ac">Créateur et concepteur de l'application Tabli</span><br><br><span>✉️ <a href="mailto:anthonypola100@gmail.com" style="color:#f2a93b">anthonypola100@gmail.com</a></span><br><span>💬 WhatsApp : <a href="https://wa.me/237693387661" target="_blank" rel="noopener" style="color:#6bbf8c">+237 693 387 661</a></span></div></div>
+  </div>`;
 }
 
 function clientsView(){
