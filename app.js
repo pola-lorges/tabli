@@ -44,7 +44,19 @@ const STATUS_FLOW=["nouvelle","préparation","prête","servie"];
 const STATUS_LABEL={nouvelle:"Nouvelle","préparation":"En préparation","prête":"Prête",servie:"Servie"};
 const STATUS_COLOR={nouvelle:"#ff6452","préparation":"#f2a93b","prête":"#6bbf8c",servie:"#5b6472"};
 
+// Variable pour stocker toutes les commandes
+let commandes = seedOrders();
+
 function fcfa(n){return n.toLocaleString("fr-FR")+" FCFA"}
+function formatDateTime(ts){
+  const d=new Date(ts);
+  const h=String(d.getHours()).padStart(2,'0');
+  const m=String(d.getMinutes()).padStart(2,'0');
+  const day=String(d.getDate()).padStart(2,'0');
+  const month=String(d.getMonth()+1).padStart(2,'0');
+  const year=d.getFullYear();
+  return`${day}/${month}/${year} ${h}:${m}`;
+}
 function timeAgo(ts){
   const mins=Math.max(0,Math.round((Date.now()-ts)/60000));
   if(mins<1)return"à l'instant";
@@ -54,7 +66,7 @@ function timeAgo(ts){
 function seedOrders(){
   const now=Date.now();
   const mk=(id,label,items,status,minsAgo,source="client")=>({
-    id,label,status,source,time:now-minsAgo*60000,
+    id,label,status,source,time:now-minsAgo*60000,paid:status==="servie"?true:false,
     items:items.map(x=>({...x})),
     total:items.reduce((s,x)=>s+x.price*x.qty,0)
   });
@@ -71,7 +83,7 @@ function seedOrders(){
 
 let state={
   role:"client",
-  orders:seedOrders(),
+  orders:commandes,
   orderCounter:108,
   table:null,
   clientCat:"bieres",
@@ -85,6 +97,20 @@ let state={
   registerError:"",
   registerModalOpen:false
 };
+
+function saveState(){
+  commandes = state.orders;
+  localStorage.setItem("tabli_orders",JSON.stringify(commandes));
+  localStorage.setItem("tabli_orderCounter",String(state.orderCounter));
+}
+function loadState(){
+  try{
+    const saved=localStorage.getItem("tabli_orders");
+    if(saved){commandes=JSON.parse(saved);state.orders=commandes}
+    const counter=localStorage.getItem("tabli_orderCounter");
+    if(counter){state.orderCounter=Number(counter)}
+  }catch(e){console.error("Erreur de chargement:",e)}
+}
 
 function nextId(){
   return`C-${state.orderCounter++}`;
@@ -109,6 +135,7 @@ function render(){
     <main class="body">${state.role==="client"?clientView():state.role==="registre"?registerView():state.role==="staff"?staffView():gerantView()}</main>
   </div>`;
   bindEvents();
+  saveState();
 }
 
 function header(){
@@ -202,8 +229,8 @@ function registerView(){
       <button class="primary-btn" style="width:auto;padding:10px 16px;font-size:13px" data-action="open-register-modal">+ Nouvelle commande</button>
     </div>`:`<div style="display:flex;justify-content:center;margin-bottom:20px"><button class="primary-btn" style="padding:12px 20px" data-action="open-register-modal">+ Ajouter une commande</button></div>`}
     ${orders.length>0?`<div class="order-list">${orders.map(o=>`<div class="order-card" style="border-color:${state.editingId===o.id?"#f2a93b":"#232a35"}">
-      <div class="order-card-head"><div><div class="order-client">${o.label}</div><div class="order-time">${timeAgo(o.time)} · <span style="color:${STATUS_COLOR[o.status]}">${STATUS_LABEL[o.status]}</span></div></div>
-      <div><button class="edit-btn" data-action="edit" data-id="${o.id}">✏️</button><button class="delete-btn" data-action="delete" data-id="${o.id}">🗑️</button></div></div>
+      <div class="order-card-head"><div><div class="order-client">${o.label}</div><div class="order-time"><span style="color:#97a0ac;font-size:12px">${formatDateTime(o.time)}</span> · <span style="font-size:12px;color:${STATUS_COLOR[o.status]}">${STATUS_LABEL[o.status]}</span></div></div>
+      <div style="display:flex;gap:6px;align-items:center"><button class="status-btn" data-action="toggle-paid" data-id="${o.id}" style="background:${o.paid?"#6bbf8c33":"#ff645233"};color:${o.paid?"#6bbf8c":"#ff6452"};border:1px solid ${o.paid?"#6bbf8c55":"#ff645255"};padding:6px 10px;border-radius:4px;font-size:12px;font-weight:500;cursor:pointer">${o.paid?"✓ Payé":"⊘ Non payé"}</button><button class="edit-btn" data-action="edit" data-id="${o.id}">✏️</button><button class="delete-btn" data-action="delete" data-id="${o.id}">🗑️</button></div></div>
       <div class="order-items">${o.items.map(it=>`<div style="font-size:13px;color:#c7cdd6;padding:2px 0"><span style="display:inline-block;width:26px;color:#f2a93b" class="mono">${it.qty}×</span>${it.name}</div>`).join("")}</div>
       <div class="order-total">${fcfa(o.total)}</div>
     </div>`).join("")}</div>`:`<div class="empty-state">Aucune commande enregistrée pour l'instant. Crée ta première !</div>`}
@@ -216,13 +243,13 @@ function registerFormModal(){
   return`<div class="modal-overlay" data-action="close-register-modal">
     <div class="modal-sheet" onclick="event.stopPropagation()">
       <div class="modal-header"><div class="title" style="font-size:18px">${state.editingId?"✏️ Modifier la commande":"➕ Nouvelle commande"}</div><button class="icon-btn" data-action="close-register-modal">✕</button></div>
-      <label class="label">Nom du client</label>
+      <div class="form-actions"><button class="primary-btn" data-action="submit-register">${state.editingId?"✏️ Mettre à jour la commande":"+ Ajouter la commande"}</button>${state.editingId?`<button class="cancel-btn" data-action="cancel-edit">✕ Annuler</button>`:""}</div>
+      <label class="label" style="margin-top:16px">Nom du client</label>
       <div class="name-row"><span style="color:#5b6472">👤</span><input id="client-name" class="name-input" value="${escapeHtml(state.registerName)}" placeholder="Ex : Achille" autofocus></div>
       <label class="label" style="margin-top:16px">Articles</label>
       ${itemPicker(state.registerCat,state.registerDraft,"register")}
       ${items.length>0?`<div class="ticket">${items.map(it=>`<div class="ticket-row"><span class="mono" style="color:#97a0ac;width:24px;font-size:12px">${it.qty}×</span><span class="flex-1" style="font-size:13px">${it.name}</span><span class="mono" style="color:#c7cdd6;font-size:12px">${fcfa(it.price*it.qty)}</span></div>`).join("")}<div class="ticket-divider"></div><div class="ticket-total"><span>Total</span><span class="mono">${fcfa(draftTotal(state.registerDraft))}</span></div></div>`:""}
       ${state.registerError?`<div class="error-text">${state.registerError}</div>`:""}
-      <div class="form-actions"><button class="primary-btn" data-action="submit-register">${state.editingId?"✏️ Mettre à jour la commande":"+ Ajouter la commande"}</button>${state.editingId?`<button class="cancel-btn" data-action="cancel-edit">✕ Annuler</button>`:""}</div>
     </div>
   </div>`;
 }
@@ -235,11 +262,11 @@ function staffView(){
     ${active.length===0?`<div class="empty-state">Aucune commande en attente. Le bar respire.</div>`:""}
     <div class="ticket-grid">${active.map(o=>`<div class="staff-ticket">
       <div class="staff-ticket-head"><div><div class="title" style="font-size:16px;font-weight:600">${o.label}</div><div class="mono" style="font-size:11px;color:#5b6472">${o.id}${o.source==="registre"?" · comptoir":""}</div></div>
-      <span class="status-badge" style="background:${STATUS_COLOR[o.status]}22;color:${STATUS_COLOR[o.status]};border-color:${STATUS_COLOR[o.status]}55">${STATUS_LABEL[o.status]}</span></div>
+      <div style="display:flex;gap:6px;align-items:center"><button class="status-btn" data-action="toggle-paid" data-id="${o.id}" style="background:${o.paid?"#6bbf8c33":"#ff645233"};color:${o.paid?"#6bbf8c":"#ff6452"};border:1px solid ${o.paid?"#6bbf8c55":"#ff645255"};padding:4px 8px;border-radius:3px;font-size:11px;font-weight:500;cursor:pointer">${o.paid?"✓":"⊘"}</button><span class="status-badge" style="background:${STATUS_COLOR[o.status]}22;color:${STATUS_COLOR[o.status]};border-color:${STATUS_COLOR[o.status]}55">${STATUS_LABEL[o.status]}</span></div></div>
       <div class="perforation"></div><div class="staff-ticket-body">${o.items.map(it=>`<div style="display:flex;font-size:13px;color:#c7cdd6;padding:3px 0"><span class="mono" style="width:28px;color:#f2a93b">${it.qty}×</span>${it.name}</div>`).join("")}</div>
-      <div class="staff-ticket-foot"><span style="font-size:11px;color:#5b6472">🕐 ${timeAgo(o.time)}</span><button class="advance-btn" data-action="advance" data-id="${o.id}">${o.status==="nouvelle"?"Démarrer la préparation":o.status==="préparation"?"Marquer prête":"Marquer servie"}</button></div>
+      <div class="staff-ticket-foot"><span style="font-size:11px;color:#97a0ac">${formatDateTime(o.time)}</span><span style="font-size:11px;color:#5b6472;margin:0 6px">·</span><span style="font-size:11px;color:#5b6472">${timeAgo(o.time)}</span><button class="advance-btn" data-action="advance" data-id="${o.id}">${o.status==="nouvelle"?"Démarrer la préparation":o.status==="préparation"?"Marquer prête":"Marquer servie"}</button></div>
     </div>`).join("")}</div>
-    ${done.length>0?`<div class="section-label" style="margin-top:28px">✓ Servies récemment</div><div class="done-list">${done.map(o=>`<div class="done-row"><span style="color:#c7cdd6;font-size:13px">${o.label} · ${o.items.length} article${o.items.length>1?"s":""}</span><span style="color:#5b6472;font-size:12px">${timeAgo(o.time)}</span></div>`).join("")}</div>`:""}
+    ${done.length>0?`<div class="section-label" style="margin-top:28px">✓ Servies récemment</div><div class="done-list">${done.map(o=>`<div class="done-row"><span style="color:#c7cdd6;font-size:13px">${o.label} · ${o.items.length} article${o.items.length>1?"s":""}</span><span style="color:#97a0ac;font-size:11px">${formatDateTime(o.time)}</span></div>`).join("")}</div>`:""}
   </div>`;
 }
 
@@ -292,7 +319,7 @@ function bindEvents(){
         const items=itemsFromDraft(state.clientDraft);
         if(!items.length)return;
         const id=nextId(),total=draftTotal(state.clientDraft);
-        state.orders.unshift({id,label:`Table ${state.table}`,source:"client",items,total,status:"nouvelle",time:Date.now()});
+        state.orders.unshift({id,label:`Table ${state.table}`,source:"client",items,total,status:"nouvelle",time:Date.now(),paid:false});
         state.clientConfirmed=id;state.clientDraft={};state.clientCartOpen=false;render();
       }
       if(a==="new-order"){state.clientConfirmed=null;render()}
@@ -308,6 +335,9 @@ function bindEvents(){
         if(state.editingId===el.dataset.id){state.editingId=null;state.registerName="";state.registerDraft={}}
         render();
       }
+      if(a==="toggle-paid"){
+        state.orders=state.orders.map(o=>o.id===el.dataset.id?{...o,paid:!o.paid}:o);render();
+      }
       if(a==="cancel-edit"){state.editingId=null;state.registerName="";state.registerDraft={};state.registerError="";state.registerModalOpen=false;render()}
       if(a==="submit-register"){
         state.registerName=document.getElementById("client-name")?.value||"";
@@ -319,7 +349,7 @@ function bindEvents(){
           state.orders=state.orders.map(o=>o.id===state.editingId?{...o,label:state.registerName.trim(),items,total}:o);
           state.editingId=null;
         }else{
-          state.orders.unshift({id:nextId(),label:state.registerName.trim(),source:"registre",items,total,status:"nouvelle",time:Date.now()});
+          state.orders.unshift({id:nextId(),label:state.registerName.trim(),source:"registre",items,total,status:"nouvelle",time:Date.now(),paid:false});
         }
         state.registerName="";state.registerDraft={};state.registerError="";state.registerModalOpen=false;render();
       }
@@ -330,4 +360,5 @@ function bindEvents(){
 document.addEventListener("input",e=>{
   if(e.target.id==="client-name")state.registerName=e.target.value;
 });
+loadState();
 render();
