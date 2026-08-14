@@ -43,6 +43,9 @@ const MENU=[
 const STATUS_FLOW=["nouvelle","préparation","prête","servie"];
 const STATUS_LABEL={nouvelle:"Nouvelle","préparation":"En préparation","prête":"Prête",servie:"Servie"};
 const STATUS_COLOR={nouvelle:"#ff6452","préparation":"#f2a93b","prête":"#6bbf8c",servie:"#5b6472"};
+const SUPABASE_URL="https://hzncqnmqfoxugyjbxntz.supabase.co";
+const SUPABASE_KEY="sb_publishable_F7AgzGSaAjfx5FWFSwisnQ_kQU2Dp-D";
+const supabaseClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 
 // Variable pour stocker toutes les commandes
 let commandes = [];
@@ -52,8 +55,7 @@ let users = {};
 
 // Charger les utilisateurs depuis localStorage
 function loadUsers(){
-  const saved = localStorage.getItem("tabli_users");
-  if(saved) users = JSON.parse(saved);
+  users = {};
 }
 function defaultMenu(){return MENU.map(item=>({...item}))}
 function normalizeProductName(name){
@@ -141,28 +143,42 @@ let state={
   newProductOpen:false
 };
 
-function saveState(){
-  commandes = state.orders;
-  if(state.loggedIn && state.currentUser){
-    users[state.currentUser] = {
-      password: users[state.currentUser]?.password || "",
-      orders: commandes,
-        orderCounter: state.orderCounter,
-        menu: state.menu||defaultMenu()
-    };
-    localStorage.setItem("tabli_users", JSON.stringify(users));
+async function loadState(){
+  const {data:{session}}=await supabaseClient.auth.getSession();
+  if(!session)return;
+  state.loggedIn=true;
+  state.currentUser=session.user.email;
+  state.userId=session.user.id;
+  const {data:profile,error:profileError}=await supabaseClient.from("profiles").select("bar_name,menu").eq("id",session.user.id).maybeSingle();
+  if(profileError)throw profileError;
+  if(!profile){
+    const barName=session.user.user_metadata?.bar_name||session.user.email.split("@")[0];
+    const {data:createdProfile,error:createError}=await supabaseClient.rpc("ensure_my_profile",{profile_bar_name:barName,profile_menu:defaultMenu()});
+    if(createError)throw createError;
+    state.profile=Array.isArray(createdProfile)?createdProfile[0]:createdProfile;
+  }else{
+    state.profile=profile;
   }
+  state.menu=state.profile.menu?.length?state.profile.menu:defaultMenu();
+  const {data:orders,error:ordersError}=await supabaseClient.from("orders").select("*").eq("bar_id",session.user.id).order("created_at",{ascending:false});
+  if(ordersError)throw ordersError;
+  state.orders=(orders||[]).map(order=>({...order,id:String(order.id),time:new Date(order.created_at).getTime()}));
+  commandes=state.orders;
 }
-function loadState(){
-  loadUsers();
-  try{
-    if(state.loggedIn && state.currentUser && users[state.currentUser]){
-      commandes = users[state.currentUser].orders || [];
-      state.orders = commandes;
-      state.orderCounter = users[state.currentUser].orderCounter || 108;
-      state.menu = users[state.currentUser].menu || defaultMenu();
-    }
-  }catch(e){console.error("Erreur de chargement:",e)}
+function saveState(){commandes=state.orders}
+async function saveProfileMenu(){
+  const {error}=await supabaseClient.from("profiles").update({menu:state.menu}).eq("id",state.userId);
+  if(error)throw error;
+}
+async function saveOrder(order){
+  const {data,error}=await supabaseClient.from("orders").insert({bar_id:state.userId,label:order.label,source:order.source,status:order.status,paid:order.paid,items:order.items,total:order.total}).select().single();
+  if(error)throw error;
+  return {...data,id:String(data.id),time:new Date(data.created_at).getTime()};
+}
+async function updateOrder(id,changes){
+  const {data,error}=await supabaseClient.from("orders").update(changes).eq("id",id).select().single();
+  if(error)throw error;
+  return {...data,id:String(data.id),time:new Date(data.created_at).getTime()};
 }
 
 function nextId(){
@@ -247,8 +263,8 @@ function loginView(){
       
       <div style="background:#1a1f2a;border:1px solid #232a35;border-radius:8px;padding:24px">
         <div style="margin-bottom:16px">
-          <label style="display:block;font-size:12px;color:#97a0ac;margin-bottom:8px;font-weight:600">Nom du bar (pseudo)</label>
-          <input id="auth-username" type="text" placeholder="Mon Nouveau Bar" value="${state.authUsername}" style="width:100%;padding:10px;background:#12151c;border:1px solid #2c333f;border-radius:4px;color:#f4efe6;box-sizing:border-box;font-family:Inter">
+          <label style="display:block;font-size:12px;color:#97a0ac;margin-bottom:8px;font-weight:600">E-mail du bar</label>
+          <input id="auth-username" type="email" placeholder="bar@exemple.com" value="${state.authUsername}" style="width:100%;padding:10px;background:#12151c;border:1px solid #2c333f;border-radius:4px;color:#f4efe6;box-sizing:border-box;font-family:Inter">
         </div>
         
         <div style="margin-bottom:24px">
@@ -267,7 +283,7 @@ function loginView(){
         </div>
       </div>
       
-      <div style="text-align:center;color:#5b6472;font-size:12px;margin-top:20px">Les données sont sécurisées localement</div>
+      <div style="text-align:center;color:#5b6472;font-size:12px;margin-top:20px">Les données sont synchronisées avec Supabase</div>
     </div>
   </div>`;
 }
@@ -364,47 +380,32 @@ function escapeHtml(s){return String(s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":
 function bindEvents(){
   document.querySelectorAll("[data-role]").forEach(b=>b.onclick=()=>{state.role=b.dataset.role;render()});
   document.querySelectorAll("[data-action]").forEach(el=>{
-    el.addEventListener("click",e=>{
+    el.addEventListener("click",async e=>{
       const a=el.dataset.action, id=Number(el.dataset.id);
       
       // Auth actions
       if(a==="login"){
         const username = document.getElementById("auth-username")?.value || "";
         const password = document.getElementById("auth-password")?.value || "";
-        if(!username.trim()){state.authError="Indique le nom de ton bar.";render();return}
+        if(!username.trim()){state.authError="Indique l'e-mail du bar.";render();return}
         if(!password.trim()){state.authError="Indique un mot de passe.";render();return}
-        if(!users[username]){state.authError="Bar non trouvé. Crée-le d'abord!";render();return}
-        if(users[username].password !== password){state.authError="Mot de passe incorrect.";render();return}
-        state.loggedIn=true;
-        state.currentUser=username;
-        state.authUsername="";
-        state.authPassword="";
-        state.authPasswordVisible=false;
+        const {error}=await supabaseClient.auth.signInWithPassword({email:username.trim(),password});
+        if(error){state.authError="E-mail ou mot de passe incorrect.";render();return}
         state.authError="";
-        loadState();
-        render();
+        try{await loadState();render()}catch(error){state.loggedIn=false;state.authError=error.message||"Erreur de chargement Supabase.";render()}
       }
       if(a==="register"){
         const username = document.getElementById("auth-username")?.value || "";
         const password = document.getElementById("auth-password")?.value || "";
-        if(!username.trim()){state.authError="Indique le nom de ton bar.";render();return}
+        if(!username.trim()){state.authError="Indique l'e-mail du bar.";render();return}
         if(!password.trim()){state.authError="Indique un mot de passe.";render();return}
-        if(users[username]){state.authError="Ce bar existe déjà!";render();return}
-        users[username] = {password, orders: [], orderCounter: 108, menu: defaultMenu()};
-        localStorage.setItem("tabli_users", JSON.stringify(users));
-        state.loggedIn=true;
-        state.currentUser=username;
-        commandes=[];
-        state.orders=[];
-        state.orderCounter=108;
-        state.menu=defaultMenu();
-        state.authUsername="";
-        state.authPassword="";
-        state.authPasswordVisible=false;
-        state.authError="";
-        render();
+        const {data,error}=await supabaseClient.auth.signUp({email:username.trim(),password,options:{data:{bar_name:username.trim().split("@")[0]}}});
+        if(error){state.authError=error.message;render();return}
+        if(!data.session){state.authError="Compte créé. Vérifie ton e-mail avant de te connecter.";render();return}
+        try{await loadState();render()}catch(loadError){state.loggedIn=false;state.authError=loadError.message||"Erreur de chargement Supabase.";render()}
       }
       if(a==="logout"){
+        await supabaseClient.auth.signOut();
         state.loggedIn=false;
         state.currentUser=null;
         state.authError="";
@@ -443,6 +444,7 @@ function bindEvents(){
         if(nextMenu.some(item=>normalizeProductName(item.name)===normalizeProductName(name))){state.priceError="Ce produit existe déjà dans ton menu.";render();return}
         const nextId=Math.max(0,...nextMenu.map(item=>Number(item.id)||0))+1;
         state.menu=[...nextMenu,{id:nextId,cat,name,desc:"Produit ajouté par le bar",price}];
+        await saveProfileMenu();
         state.registerCat=cat;
         state.newProductOpen=false;
         state.priceError="";
@@ -454,6 +456,7 @@ function bindEvents(){
         if(!window.confirm(`Supprimer le produit « ${product.name} » ?`))return;
         state.menu=(state.menu||MENU).filter(item=>Number(item.id)!==id);
         delete state.registerDraft[id];
+        await saveProfileMenu();
         render();
       }
       if(a==="save-prices"){
@@ -467,6 +470,7 @@ function bindEvents(){
           return;
         }
         state.menu=updatedMenu;
+        await saveProfileMenu();
         state.priceError="";
         render();
       }
@@ -486,12 +490,16 @@ function bindEvents(){
         state.editingId=o.id;state.registerName=o.label;state.registerDraft={};o.items.forEach(it=>state.registerDraft[it.id]={...it});state.registerError="";state.registerModalOpen=true;render();
       }
       if(a==="delete"){
+        const {error}=await supabaseClient.from("orders").delete().eq("id",el.dataset.id);
+        if(error){state.registerError="Impossible de supprimer la commande.";render();return}
         state.orders=state.orders.filter(o=>o.id!==el.dataset.id);
         if(state.editingId===el.dataset.id){state.editingId=null;state.registerName="";state.registerDraft={}}
         render();
       }
       if(a==="toggle-paid"){
-        state.orders=state.orders.map(o=>o.id===el.dataset.id?{...o,paid:!o.paid}:o);render();
+        const order=state.orders.find(o=>o.id===el.dataset.id);if(!order)return;
+        const updated=await updateOrder(el.dataset.id,{paid:!order.paid});
+        state.orders=state.orders.map(o=>o.id===el.dataset.id?updated:o);render();
       }
       if(a==="cancel-edit"){state.editingId=null;state.registerName="";state.registerDraft={};state.registerError="";state.registerModalOpen=false;render()}
       if(a==="submit-register"){
@@ -501,10 +509,12 @@ function bindEvents(){
         if(!items.length){state.registerError="Ajoute au moins un article à la commande.";render();return}
         const total=draftTotal(state.registerDraft);
         if(state.editingId){
-          state.orders=state.orders.map(o=>o.id===state.editingId?{...o,label:state.registerName.trim(),items,total}:o);
+          const updated=await updateOrder(state.editingId,{label:state.registerName.trim(),items,total});
+          state.orders=state.orders.map(o=>o.id===state.editingId?updated:o);
           state.editingId=null;
         }else{
-          state.orders.unshift({id:nextId(),label:state.registerName.trim(),source:"registre",items,total,status:"nouvelle",time:Date.now(),paid:false});
+          const created=await saveOrder({label:state.registerName.trim(),source:"registre",items,total,status:"nouvelle",paid:false});
+          state.orders.unshift(created);
         }
         state.registerName="";state.registerDraft={};state.registerError="";state.registerModalOpen=false;render();
       }
@@ -524,6 +534,8 @@ function bindEvents(){
     render();
   });
 }
-loadUsers();
-loadState();
-render();
+loadState().then(()=>render()).catch(error=>{
+  console.error("Erreur Supabase:",error);
+  state.authError="Impossible de charger les données Supabase.";
+  render();
+});
