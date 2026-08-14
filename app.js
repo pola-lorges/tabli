@@ -47,6 +47,15 @@ const STATUS_COLOR={nouvelle:"#ff6452","préparation":"#f2a93b","prête":"#6bbf8
 // Variable pour stocker toutes les commandes
 let commandes = [];
 
+// Stockage des utilisateurs (normalement dans une vraie base de données)
+let users = {};
+
+// Charger les utilisateurs depuis localStorage
+function loadUsers(){
+  const saved = localStorage.getItem("tabli_users");
+  if(saved) users = JSON.parse(saved);
+}
+
 function fcfa(n){return n.toLocaleString("fr-FR")+" FCFA"}
 function formatDateTime(ts){
   const d=new Date(ts);
@@ -82,6 +91,15 @@ function seedOrders(){
 }
 
 let state={
+  // Auth
+  loggedIn:false,
+  currentUser:null,
+  authError:"",
+  authUsername:"",
+  authPassword:"",
+  authPasswordVisible:false,
+  
+  // App
   role:"registre",
   orders:commandes,
   orderCounter:108,
@@ -95,15 +113,24 @@ let state={
 
 function saveState(){
   commandes = state.orders;
-  localStorage.setItem("tabli_orders",JSON.stringify(commandes));
-  localStorage.setItem("tabli_orderCounter",String(state.orderCounter));
+  if(state.loggedIn && state.currentUser){
+    // Sauvegarder les données de l'utilisateur actuel
+    users[state.currentUser] = {
+      password: users[state.currentUser]?.password || "",
+      orders: commandes,
+      orderCounter: state.orderCounter
+    };
+    localStorage.setItem("tabli_users", JSON.stringify(users));
+  }
 }
 function loadState(){
+  loadUsers();
   try{
-    const saved=localStorage.getItem("tabli_orders");
-    if(saved){commandes=JSON.parse(saved);state.orders=commandes}
-    const counter=localStorage.getItem("tabli_orderCounter");
-    if(counter){state.orderCounter=Number(counter)}
+    if(state.loggedIn && state.currentUser && users[state.currentUser]){
+      commandes = users[state.currentUser].orders || [];
+      state.orders = commandes;
+      state.orderCounter = users[state.currentUser].orderCounter || 108;
+    }
   }catch(e){console.error("Erreur de chargement:",e)}
 }
 
@@ -125,10 +152,14 @@ function removeFromDraft(draft,item){
 
 function render(){
   const app=document.getElementById("app");
-  app.innerHTML=`<div class="app">
-    ${header()}
-    <main class="body">${state.role==="registre"?registerView():gerantView()}</main>
-  </div>`;
+  if(!state.loggedIn){
+    app.innerHTML=loginView();
+  }else{
+    app.innerHTML=`<div class="app">
+      ${header()}
+      <main class="body">${state.role==="registre"?registerView():gerantView()}</main>
+    </div>`;
+  }
   bindEvents();
   saveState();
 }
@@ -138,12 +169,49 @@ function header(){
   return`<header class="header">
     <div class="brand">
       <div class="brand-mark">T</div>
-      <div><div class="brand-name">Tabli</div><div class="brand-sub">Commandes de bar, sans friction</div></div>
+      <div><div class="brand-name">Tabli</div><div class="brand-sub" style="font-size:11px">🍺 ${state.currentUser}</div></div>
     </div>
     <nav class="tab-row">
       ${tabs.map(([id,label])=>`<button class="tab-btn" data-role="${id}" style="color:${state.role===id?"#12151c":"#c7cdd6"};background:${state.role===id?"#f2a93b":"transparent"}">${label}</button>`).join("")}
+      <button class="tab-btn" data-action="logout" style="color:#ff6452;background:transparent;margin-left:auto">Déconnexion</button>
     </nav>
   </header>`;
+}
+
+function loginView(){
+  return`<div style="min-height:100vh;background:#12151c;display:flex;align-items:center;justify-content:center;padding:20px">
+    <div style="width:100%;max-width:400px">
+      <div style="text-align:center;margin-bottom:32px">
+        <div style="font-size:48px;margin-bottom:12px">🍺</div>
+        <div style="font-size:28px;font-weight:700;color:#f4efe6;font-family:Fraunces">Tabli</div>
+        <div style="font-size:14px;color:#97a0ac;margin-top:4px">Gestion de commandes de bar</div>
+      </div>
+      
+      <div style="background:#1a1f2a;border:1px solid #232a35;border-radius:8px;padding:24px">
+        <div style="margin-bottom:16px">
+          <label style="display:block;font-size:12px;color:#97a0ac;margin-bottom:8px;font-weight:600">Nom du bar (pseudo)</label>
+          <input id="auth-username" type="text" placeholder="Mon Nouveau Bar" value="${state.authUsername}" style="width:100%;padding:10px;background:#12151c;border:1px solid #2c333f;border-radius:4px;color:#f4efe6;box-sizing:border-box;font-family:Inter">
+        </div>
+        
+        <div style="margin-bottom:24px">
+          <label style="display:block;font-size:12px;color:#97a0ac;margin-bottom:8px;font-weight:600">Mot de passe</label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input id="auth-password" type="${state.authPasswordVisible?"text":"password"}" placeholder="••••••••" value="${state.authPassword}" style="flex:1;padding:10px;background:#12151c;border:1px solid #2c333f;border-radius:4px;color:#f4efe6;box-sizing:border-box;font-family:Inter">
+            <button data-action="toggle-password-visibility" style="width:40px;height:40px;background:#232a35;border:1px solid #2c333f;border-radius:4px;color:#f4efe6;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center">${state.authPasswordVisible?"👁️":"🙈"}</button>
+          </div>
+        </div>
+        
+        ${state.authError?`<div style="background:#ff645233;border:1px solid #ff645255;color:#ff6452;padding:10px;border-radius:4px;font-size:13px;margin-bottom:16px">${state.authError}</div>`:""}
+        
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <button data-action="register" style="padding:12px;background:#f2a93b;color:#12151c;border:none;border-radius:4px;font-weight:600;cursor:pointer;font-size:14px">Créer</button>
+          <button data-action="login" style="padding:12px;background:#232a35;color:#f4efe6;border:1px solid #2c333f;border-radius:4px;font-weight:600;cursor:pointer;font-size:14px">Connexion</button>
+        </div>
+      </div>
+      
+      <div style="text-align:center;color:#5b6472;font-size:12px;margin-top:20px">Les données sont sécurisées localement</div>
+    </div>
+  </div>`;
 }
 
 function categoryPicker(cat,scope){
@@ -231,6 +299,59 @@ function bindEvents(){
   document.querySelectorAll("[data-action]").forEach(el=>{
     el.addEventListener("click",e=>{
       const a=el.dataset.action, id=Number(el.dataset.id);
+      
+      // Auth actions
+      if(a==="login"){
+        const username = document.getElementById("auth-username")?.value || "";
+        const password = document.getElementById("auth-password")?.value || "";
+        if(!username.trim()){state.authError="Indique le nom de ton bar.";render();return}
+        if(!password.trim()){state.authError="Indique un mot de passe.";render();return}
+        if(!users[username]){state.authError="Bar non trouvé. Crée-le d'abord!";render();return}
+        if(users[username].password !== password){state.authError="Mot de passe incorrect.";render();return}
+        state.loggedIn=true;
+        state.currentUser=username;
+        state.authUsername="";
+        state.authPassword="";
+        state.authPasswordVisible=false;
+        state.authError="";
+        loadState();
+        render();
+      }
+      if(a==="register"){
+        const username = document.getElementById("auth-username")?.value || "";
+        const password = document.getElementById("auth-password")?.value || "";
+        if(!username.trim()){state.authError="Indique le nom de ton bar.";render();return}
+        if(!password.trim()){state.authError="Indique un mot de passe.";render();return}
+        if(users[username]){state.authError="Ce bar existe déjà!";render();return}
+        users[username] = {password, orders: [], orderCounter: 108};
+        localStorage.setItem("tabli_users", JSON.stringify(users));
+        state.loggedIn=true;
+        state.currentUser=username;
+        commandes=[];
+        state.orders=[];
+        state.orderCounter=108;
+        state.authUsername="";
+        state.authPassword="";
+        state.authPasswordVisible=false;
+        state.authError="";
+        render();
+      }
+      if(a==="logout"){
+        state.loggedIn=false;
+        state.currentUser=null;
+        state.authError="";
+        state.authUsername="";
+        state.authPassword="";
+        state.authPasswordVisible=false;
+        commandes=[];
+        state.orders=[];
+        render();
+      }
+      if(a==="toggle-password-visibility"){
+        state.authPasswordVisible=!state.authPasswordVisible;
+        render();
+      }
+      
       if(a==="category"){
         state.registerCat=el.dataset.cat;
         render();
@@ -271,10 +392,15 @@ function bindEvents(){
       }
     });
   });
+  
+  // Input listeners
+  const authUsername = document.getElementById("auth-username");
+  const authPassword = document.getElementById("auth-password");
+  const clientName = document.getElementById("client-name");
+  if(authUsername) authUsername.addEventListener("input", e => state.authUsername = e.target.value);
+  if(authPassword) authPassword.addEventListener("input", e => state.authPassword = e.target.value);
+  if(clientName) clientName.addEventListener("input", e => state.registerName = e.target.value);
 }
-
-document.addEventListener("input",e=>{
-  if(e.target.id==="client-name")state.registerName=e.target.value;
-});
+loadUsers();
 loadState();
 render();
