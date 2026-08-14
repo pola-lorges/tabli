@@ -152,6 +152,10 @@ function removeFromDraft(draft,item){
 
 function render(){
   const app=document.getElementById("app");
+  // Sauvegarder la position du scroll du modal si elle existe
+  const modalSheet = document.querySelector(".modal-sheet");
+  const modalScroll = modalSheet ? modalSheet.scrollTop : 0;
+  
   if(!state.loggedIn){
     app.innerHTML=loginView();
   }else{
@@ -161,6 +165,15 @@ function render(){
     </div>`;
   }
   bindEvents();
+  
+  // Restaurer la position du scroll du modal si elle existe
+  setTimeout(() => {
+    const newModalSheet = document.querySelector(".modal-sheet");
+    if(newModalSheet && modalScroll > 0) {
+      newModalSheet.scrollTop = modalScroll;
+    }
+  }, 0);
+  
   saveState();
 }
 
