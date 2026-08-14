@@ -45,7 +45,7 @@ const STATUS_LABEL={nouvelle:"Nouvelle","préparation":"En préparation","prête
 const STATUS_COLOR={nouvelle:"#ff6452","préparation":"#f2a93b","prête":"#6bbf8c",servie:"#5b6472"};
 
 // Variable pour stocker toutes les commandes
-let commandes = seedOrders();
+let commandes = [];
 
 function fcfa(n){return n.toLocaleString("fr-FR")+" FCFA"}
 function formatDateTime(ts){
@@ -82,14 +82,9 @@ function seedOrders(){
 }
 
 let state={
-  role:"client",
+  role:"registre",
   orders:commandes,
   orderCounter:108,
-  table:null,
-  clientCat:"bieres",
-  clientDraft:{},
-  clientConfirmed:null,
-  clientCartOpen:false,
   registerCat:"bieres",
   registerDraft:{},
   registerName:"",
@@ -132,14 +127,14 @@ function render(){
   const app=document.getElementById("app");
   app.innerHTML=`<div class="app">
     ${header()}
-    <main class="body">${state.role==="client"?clientView():state.role==="registre"?registerView():state.role==="staff"?staffView():gerantView()}</main>
+    <main class="body">${state.role==="registre"?registerView():gerantView()}</main>
   </div>`;
   bindEvents();
   saveState();
 }
 
 function header(){
-  const tabs=[["client","Client"],["registre","Registre"],["staff","Serveur"],["gerant","Gérant"]];
+  const tabs=[["registre","Registre"],["gerant","Gérant"]];
   return`<header class="header">
     <div class="brand">
       <div class="brand-mark">T</div>
@@ -168,55 +163,6 @@ function itemPicker(cat,draft,scope){
       `<div class="stepper"><button class="step-btn" data-action="remove" data-scope="${scope}" data-id="${item.id}">−</button><span class="step-qty">${qty}</span><button class="step-btn" data-action="add" data-scope="${scope}" data-id="${item.id}">+</button></div>`}
     </div>`;
   }).join("")}</div>`;
-}
-
-function clientView(){
-  if(!state.table)return`<div class="center-screen">
-    <div class="title" style="font-size:26px;margin-bottom:6px">Quelle est votre table ?</div>
-    <div class="muted" style="margin-bottom:24px;font-size:14px">Simule le scan du QR code posé sur la table</div>
-    <div class="table-grid">${Array.from({length:12},(_,i)=>`<button class="table-btn" data-table="${i+1}">${i+1}</button>`).join("")}</div>
-  </div>`;
-  if(state.clientConfirmed){
-    const order=state.orders.find(o=>o.id===state.clientConfirmed);
-    return orderTracker(order);
-  }
-  const count=itemsFromDraft(state.clientDraft).reduce((s,x)=>s+x.qty,0);
-  const total=draftTotal(state.clientDraft);
-  return`<div class="client-wrap">
-    <div class="table-pill">👥 Table ${state.table}</div>
-    ${itemPicker(state.clientCat,state.clientDraft,"client")}
-    ${count?`<button class="cart-bar" data-action="open-cart"><span>🛒 ${count} article${count>1?"s":""}</span><span class="mono">${fcfa(total)}</span></button>`:""}
-    ${state.clientCartOpen?cartModal(itemsFromDraft(state.clientDraft),total,`Table ${state.table} — Récapitulatif`,"client"):""}
-  </div>`;
-}
-
-function cartModal(items,total,title,scope){
-  return`<div class="modal-overlay" data-action="close-cart">
-    <div class="modal-sheet" onclick="event.stopPropagation()">
-      <div class="modal-header"><div class="title" style="font-size:18px">${title}</div><button class="icon-btn" data-action="close-cart">✕</button></div>
-      <div class="ticket">${items.map(it=>`<div class="ticket-row">
-        <div class="stepper"><button class="step-btn" data-action="remove" data-scope="${scope}" data-id="${it.id}">−</button><span class="step-qty">${it.qty}</span><button class="step-btn" data-action="add" data-scope="${scope}" data-id="${it.id}">+</button></div>
-        <span class="flex-1" style="margin-left:10px;font-size:14px">${it.name}</span><span class="mono" style="color:#c7cdd6;font-size:13px">${fcfa(it.price*it.qty)}</span>
-      </div>`).join("")}<div class="ticket-divider"></div><div class="ticket-total"><span>Total</span><span class="mono">${fcfa(total)}</span></div></div>
-      <button class="primary-btn" data-action="submit-client">Envoyer la commande</button>
-    </div>
-  </div>`;
-}
-
-function orderTracker(order){
-  if(!order)return"";
-  const idx=STATUS_FLOW.indexOf(order.status);
-  return`<div class="center-screen">
-    <div style="font-size:30px;margin-bottom:12px">🧾</div>
-    <div class="title" style="font-size:22px;margin-bottom:4px">Commande ${order.id} envoyée</div>
-    <div class="muted" style="font-size:14px;margin-bottom:28px">${order.label} · ${fcfa(order.total)}</div>
-    <div class="progress-row">${STATUS_FLOW.map((s,i)=>`
-      <div class="progress-step"><div class="progress-dot" style="background:${i<=idx?STATUS_COLOR[s]:"#232a35"};border-color:${i<=idx?STATUS_COLOR[s]:"#2c333f"}">${i<idx?'<span style="color:#12151c;font-size:11px;font-weight:700">✓</span>':""}</div>
-      <span style="font-size:11px;color:${i<=idx?"#f4efe6":"#5b6472"};margin-top:6px">${STATUS_LABEL[s]}</span></div>
-      ${i<3?`<div class="progress-line" style="background:${i<idx?STATUS_COLOR[s]:"#2c333f"}"></div>`:""}`).join("")}</div>
-    <div class="ticket" style="width:100%;max-width:420px">${order.items.map(it=>`<div class="ticket-row"><span class="mono" style="color:#97a0ac;width:28px;font-size:13px">${it.qty}×</span><span class="flex-1" style="font-size:14px">${it.name}</span><span class="mono" style="color:#c7cdd6;font-size:13px">${fcfa(it.price*it.qty)}</span></div>`).join("")}</div>
-    <button class="secondary-btn" data-action="new-order">← Commander à nouveau</button>
-  </div>`;
 }
 
 function registerView(){
@@ -254,26 +200,11 @@ function registerFormModal(){
   </div>`;
 }
 
-function staffView(){
-  const active=state.orders.filter(o=>o.status!=="servie").sort((a,b)=>a.time-b.time);
-  const done=state.orders.filter(o=>o.status==="servie").sort((a,b)=>b.time-a.time).slice(0,4);
-  return`<div class="staff-wrap">
-    <div class="section-label">👨‍🍳 Commandes en cours (${active.length})</div>
-    ${active.length===0?`<div class="empty-state">Aucune commande en attente. Le bar respire.</div>`:""}
-    <div class="ticket-grid">${active.map(o=>`<div class="staff-ticket">
-      <div class="staff-ticket-head"><div><div class="title" style="font-size:16px;font-weight:600">${o.label}</div><div class="mono" style="font-size:11px;color:#5b6472">${o.id}${o.source==="registre"?" · comptoir":""}</div></div>
-      <div style="display:flex;gap:6px;align-items:center"><button class="status-btn" data-action="toggle-paid" data-id="${o.id}" style="background:${o.paid?"#6bbf8c33":"#ff645233"};color:${o.paid?"#6bbf8c":"#ff6452"};border:1px solid ${o.paid?"#6bbf8c55":"#ff645255"};padding:4px 8px;border-radius:3px;font-size:11px;font-weight:500;cursor:pointer">${o.paid?"✓":"⊘"}</button><span class="status-badge" style="background:${STATUS_COLOR[o.status]}22;color:${STATUS_COLOR[o.status]};border-color:${STATUS_COLOR[o.status]}55">${STATUS_LABEL[o.status]}</span></div></div>
-      <div class="perforation"></div><div class="staff-ticket-body">${o.items.map(it=>`<div style="display:flex;font-size:13px;color:#c7cdd6;padding:3px 0"><span class="mono" style="width:28px;color:#f2a93b">${it.qty}×</span>${it.name}</div>`).join("")}</div>
-      <div class="staff-ticket-foot"><span style="font-size:11px;color:#97a0ac">${formatDateTime(o.time)}</span><span style="font-size:11px;color:#5b6472;margin:0 6px">·</span><span style="font-size:11px;color:#5b6472">${timeAgo(o.time)}</span><button class="advance-btn" data-action="advance" data-id="${o.id}">${o.status==="nouvelle"?"Démarrer la préparation":o.status==="préparation"?"Marquer prête":"Marquer servie"}</button></div>
-    </div>`).join("")}</div>
-    ${done.length>0?`<div class="section-label" style="margin-top:28px">✓ Servies récemment</div><div class="done-list">${done.map(o=>`<div class="done-row"><span style="color:#c7cdd6;font-size:13px">${o.label} · ${o.items.length} article${o.items.length>1?"s":""}</span><span style="color:#97a0ac;font-size:11px">${formatDateTime(o.time)}</span></div>`).join("")}</div>`:""}
-  </div>`;
-}
-
 function gerantView(){
-  const revenue=state.orders.reduce((s,o)=>s+o.total,0),count=state.orders.length,avg=count?Math.round(revenue/count):0;
+  const revenue=commandes.reduce((s,o)=>s+o.total,0),count=commandes.length,avg=count?Math.round(revenue/count):0;
+  const paid=commandes.filter(o=>o.paid).reduce((s,o)=>s+o.total,0);
   const byCat={},byItem={};
-  state.orders.forEach(o=>o.items.forEach(it=>{
+  commandes.forEach(o=>o.items.forEach(it=>{
     const m=MENU.find(x=>x.id===it.id),cat=m?.cat||"autre";
     byCat[cat]=(byCat[cat]||0)+it.price*it.qty;
     byItem[it.name]=(byItem[it.name]||0)+it.qty;
@@ -286,7 +217,7 @@ function gerantView(){
       ${statCard("Chiffre d'affaires (jour)",fcfa(revenue),"📈")}
       ${statCard("Commandes",count,"🧾")}
       ${statCard("Panier moyen",fcfa(avg),"🛒")}
-      ${statCard("Produit vedette",topItems[0]?.[0]||"—","🔥")}
+      ${statCard("Montant encaissé",fcfa(paid),"💰")}
     </div>
     <div class="panel"><div class="panel-title">Ventes par catégorie</div>${catChart.map(c=>`<div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;font-size:13px;color:#c7cdd6;margin-bottom:4px"><span>${c.name}</span><span class="mono">${fcfa(c.value)}</span></div><div class="bar-track"><div class="bar-fill" style="width:${c.value/maxCat*100}%"></div></div></div>`).join("")}</div>
     <div class="panel"><div class="panel-title">Produits les plus commandés</div>${topItems.map(([name,qty])=>`<div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;font-size:13px;color:#c7cdd6;margin-bottom:4px"><span>${name}</span><span class="mono">${qty}</span></div><div class="bar-track"><div class="bar-fill" style="width:${qty/maxTop*100}%"></div></div></div>`).join("")}</div>
@@ -297,35 +228,20 @@ function escapeHtml(s){return String(s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":
 
 function bindEvents(){
   document.querySelectorAll("[data-role]").forEach(b=>b.onclick=()=>{state.role=b.dataset.role;render()});
-  document.querySelectorAll("[data-table]").forEach(b=>b.onclick=()=>{state.table=Number(b.dataset.table);render()});
   document.querySelectorAll("[data-action]").forEach(el=>{
     el.addEventListener("click",e=>{
       const a=el.dataset.action, id=Number(el.dataset.id);
       if(a==="category"){
-        if(el.dataset.scope==="client")state.clientCat=el.dataset.cat;else state.registerCat=el.dataset.cat;
+        state.registerCat=el.dataset.cat;
         render();
       }
       if(a==="add"||a==="remove"){
-        const item=MENU.find(x=>x.id===id),scope=el.dataset.scope;
-        if(scope==="client")state.clientDraft=a==="add"?addToDraft(state.clientDraft,item):removeFromDraft(state.clientDraft,item);
-        else state.registerDraft=a==="add"?addToDraft(state.registerDraft,item):removeFromDraft(state.registerDraft,item);
+        const item=MENU.find(x=>x.id===id);
+        state.registerDraft=a==="add"?addToDraft(state.registerDraft,item):removeFromDraft(state.registerDraft,item);
         render();
       }
-      if(a==="open-cart")state.clientCartOpen=true,render();
-      if(a==="close-cart")state.clientCartOpen=false,render();
       if(a==="open-register-modal"){state.registerModalOpen=true;state.editingId=null;state.registerName="";state.registerDraft={};state.registerError="";render()}
       if(a==="close-register-modal"){state.registerModalOpen=false;state.editingId=null;state.registerName="";state.registerDraft={};state.registerError="";render()}
-      if(a==="submit-client"){
-        const items=itemsFromDraft(state.clientDraft);
-        if(!items.length)return;
-        const id=nextId(),total=draftTotal(state.clientDraft);
-        state.orders.unshift({id,label:`Table ${state.table}`,source:"client",items,total,status:"nouvelle",time:Date.now(),paid:false});
-        state.clientConfirmed=id;state.clientDraft={};state.clientCartOpen=false;render();
-      }
-      if(a==="new-order"){state.clientConfirmed=null;render()}
-      if(a==="advance"){
-        state.orders=state.orders.map(o=>o.id===el.dataset.id?{...o,status:STATUS_FLOW[Math.min(STATUS_FLOW.indexOf(o.status)+1,3)]}:o);render();
-      }
       if(a==="edit"){
         const o=state.orders.find(x=>x.id===el.dataset.id);if(!o)return;
         state.editingId=o.id;state.registerName=o.label;state.registerDraft={};o.items.forEach(it=>state.registerDraft[it.id]={...it});state.registerError="";state.registerModalOpen=true;render();
