@@ -142,7 +142,8 @@ let state={
   priceError:"",
   newProductOpen:false,
   orderDetailId:null,
-  registerOrderFilter:"open"
+  registerOrderFilter:"open",
+  clientSearch:""
 };
 
 async function loadState(){
@@ -277,10 +278,11 @@ function clientsView(){
     client.details.push(order);
     clientsByName[key]=client;
   });
-  const clients=Object.values(clientsByName).sort((a,b)=>b.lastOrder-a.lastOrder);
+  const search=normalizeProductName(state.clientSearch||"");
+  const clients=Object.values(clientsByName).filter(client=>!search||normalizeProductName(client.name).includes(search)).sort((a,b)=>b.lastOrder-a.lastOrder);
   return`<div>
     <div class="section-label">👥 Liste des clients</div>
-    <div class="panel"><div class="panel-title">Clients enregistrés (${clients.length})</div>${clients.map(client=>{
+    <div class="panel"><div class="panel-title">Clients enregistrés (${clients.length})</div><div style="margin-bottom:12px"><input id="client-search" type="search" value="${escapeHtml(state.clientSearch)}" placeholder="Rechercher un client..." style="width:100%;padding:9px 11px;background:#12151c;border:1px solid #2c333f;border-radius:7px;color:#f4efe6"></div>${clients.map(client=>{
       const favorite=Object.entries(client.products).sort((a,b)=>b[1]-a[1])[0];
       return`<div class="order-card" style="margin-bottom:10px"><div class="order-card-head"><div><div class="order-client">${escapeHtml(client.name)}</div><div class="order-time">Dernière commande : ${formatDateTime(client.lastOrder)}</div></div><div class="mono" style="color:#f2a93b">${fcfa(client.total)}</div></div><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:12px;color:#c7cdd6;margin-bottom:8px"><span>${client.orders} commande${client.orders>1?"s":""}</span><span>${client.quantity} article${client.quantity>1?"s":""} consommé${client.quantity>1?"s":""}</span><span>Produit préféré : ${escapeHtml(favorite?.[0]||"-")}</span></div><div style="border-top:1px solid #232a35;padding-top:6px">${client.details.sort((a,b)=>b.time-a.time).map(order=>`<div data-order-detail="${order.id}" style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:5px 0;font-size:12px;color:#c7cdd6;cursor:pointer"><span>${formatDateTime(order.time)} · ${order.items.map(item=>`${item.qty}× ${escapeHtml(item.name)}`).join(", ")}</span><span class="mono" style="color:${order.paid?"#6bbf8c":"#f2a93b"}">${fcfa(order.total)} · ${order.paid?"Payée":"Non payée"}</span></div>`).join("")}</div></div>`;
     }).join("")||"<div class=\"empty-state\">Aucun client enregistré.</div>"}</div>
@@ -624,12 +626,19 @@ function bindEvents(){
   const authPassword = document.getElementById("auth-password");
   const clientName = document.getElementById("client-name");
   const statsDate = document.getElementById("stats-date");
+  const clientSearch = document.getElementById("client-search");
   if(authUsername) authUsername.addEventListener("input", e => state.authUsername = e.target.value);
   if(authPassword) authPassword.addEventListener("input", e => state.authPassword = e.target.value);
   if(clientName) clientName.addEventListener("input", e => state.registerName = e.target.value);
   if(statsDate) statsDate.addEventListener("change", e => {
     state.statsDate=e.target.value||dateToInputValue();
     render();
+  });
+  if(clientSearch) clientSearch.addEventListener("input", e => {
+    state.clientSearch=e.target.value;
+    render();
+    const input=document.getElementById("client-search");
+    if(input){input.focus();input.setSelectionRange(state.clientSearch.length,state.clientSearch.length)}
   });
 }
 loadState().then(()=>render()).catch(error=>{
