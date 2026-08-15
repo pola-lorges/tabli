@@ -390,12 +390,14 @@ function closedOrdersView(){
 
 function registerFormModal(){
   const items=itemsFromDraft(state.registerDraft);
+  const clientNames=[...new Map(state.orders.map(order=>[normalizeProductName(order.label),order.label])).values()].sort((a,b)=>a.localeCompare(b,"fr"));
   return`<div class="modal-overlay" data-action="close-register-modal">
     <div class="modal-sheet" onclick="event.stopPropagation()">
       <div class="modal-header"><div class="title" style="font-size:18px">${state.editingId?"✏️ Modifier la commande":"➕ Nouvelle commande"}</div><button class="icon-btn" data-action="close-register-modal">✕</button></div>
       <div class="form-actions"><button class="primary-btn" data-action="submit-register">${state.editingId?"✏️ Mettre à jour la commande":"+ Ajouter la commande"}</button>${state.editingId?`<button class="cancel-btn" data-action="cancel-edit">✕ Annuler</button>`:""}</div>
       <label class="label" style="margin-top:16px">Nom du client</label>
-      <div class="name-row"><span style="color:#5b6472">👤</span><input id="client-name" class="name-input" value="${escapeHtml(state.registerName)}" placeholder="Ex : Achille" autofocus></div>
+      <div class="name-row"><span style="color:#5b6472">👤</span><input id="client-name" class="name-input" list="registered-clients" value="${escapeHtml(state.registerName)}" placeholder="Ex : Achille" autocomplete="off" autofocus></div>
+      <datalist id="registered-clients">${clientNames.map(name=>`<option value="${escapeHtml(name)}"></option>`).join("")}</datalist>
       ${state.registerError?`<div class="error-text">${state.registerError}</div>`:""}
       ${items.length>0?`<div class="ticket">${items.map(it=>`<div class="ticket-row"><span class="mono" style="color:#97a0ac;width:24px;font-size:12px">${it.qty}×</span><span class="flex-1" style="font-size:13px">${it.name}</span><span class="mono" style="color:#c7cdd6;font-size:12px">${fcfa(it.price*it.qty)}</span></div>`).join("")}<div class="ticket-divider"></div><div class="ticket-total"><span>Total</span><span class="mono">${fcfa(draftTotal(state.registerDraft))}</span></div></div>`:""}
       <label class="label" style="margin-top:16px">Articles</label>
@@ -467,6 +469,7 @@ function bindEvents(){
   document.querySelectorAll("[data-action]").forEach(el=>{
     el.addEventListener("click",async e=>{
       const a=el.dataset.action, id=Number(el.dataset.id);
+      if(a==="toggle-paid")e.stopPropagation();
       
       // Auth actions
       if(a==="login"){
